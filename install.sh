@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # One-shot setup of the ROS 2 Jazzy + MoveIt browser-desktop env on a Mac.
-#   curl -fsSL https://raw.githubusercontent.com/<you>/ros2-dev/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/DavidSeyserGit/ros2-dev/main/install.sh | bash
 set -euo pipefail
 
-REPO="${ROS2_DEV_REPO:-https://github.com/REPLACE_ME/ros2-dev.git}"
+REPO="${ROS2_DEV_REPO:-https://github.com/DavidSeyserGit/ros2-dev.git}"
 DIR="${ROS2_DEV_DIR:-$HOME/ros2}"
 CPUS="${COLIMA_CPUS:-6}"; MEM="${COLIMA_MEM:-8}"; DISK="${COLIMA_DISK:-80}"
 

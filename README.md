@@ -8,6 +8,14 @@ Runs a full ROS 2 desktop in a container and shows it in your browser at
 - XFCE desktop via TigerVNC + noVNC; RViz renders in software (Mesa llvmpipe)
 - `ws/` is your colcon workspace. Edit it on the Mac (VS Code/Cursor); build it in the container.
 
+## Install on a new Mac
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/DavidSeyserGit/ros2-dev/main/install.sh | bash
+```
+
+This installs Homebrew (if missing), Colima and the Docker CLI tools, starts the VM, clones this repo to `~/ros2`, builds the image and opens the desktop.
+
 ## Daily use
 
 ```bash

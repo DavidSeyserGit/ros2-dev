@@ -14,7 +14,7 @@ class TrailNode(Node):
         super().__init__('gripper_trail')
         # Parameters: which frames to track, how long the trail lives, etc.
         self.fixed_frame = self.declare_parameter('fixed_frame', 'panda_link0').value
-        self.tip_frame = self.declare_parameter('tip_frame', 'panda_hand_tcp').value
+        self.tip_frame = self.declare_parameter('tip_frame', 'panda_hand').value
         self.lifetime = self.declare_parameter('trail_lifetime', 10.0).value  # seconds until a point fully fades
         self.min_step = self.declare_parameter('min_step', 0.002).value       # metres; skip points closer than this
         self.width = self.declare_parameter('line_width', 0.005).value
