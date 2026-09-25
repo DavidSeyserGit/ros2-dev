@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+# Helper for the ROS 2 Jazzy + MoveIt browser-desktop container.
+set -euo pipefail
+cd "$(dirname "$0")"
+
+ensure_vm() {
+  if ! colima status >/dev/null 2>&1; then
+    echo "Starting Colima VM..."
+    colima start
+  fi
+}
+
+case "${1:-help}" in
+  up)      ensure_vm; docker compose up -d --build
+           echo "Desktop: http://localhost:6080/vnc.html?autoconnect=1&resize=scale"
+           sleep 3; open "http://localhost:6080/vnc.html?autoconnect=1&resize=scale" ;;
+  open)    open "http://localhost:6080/vnc.html?autoconnect=1&resize=scale" ;;
+  down)    docker compose down ;;
+  restart) ensure_vm; docker compose restart ;;
+  shell)   ensure_vm; docker compose exec -it ros2 bash -l ;;
+  build)   docker compose exec ros2 bash -lc 'cd ~/ws && colcon build --symlink-install' ;;
+  rebuild) ensure_vm; docker compose build --pull && docker compose up -d ;;
+  logs)    docker compose logs -f ;;
+  status)  colima status; docker compose ps ;;
+  stop-vm) docker compose down; colima stop ;;
+  *) cat <<USAGE
+Usage: ./rosdev <command>
+  up        start VM + container, open the desktop in the browser
+  open      open the browser desktop
+  shell     bash shell inside the container (ROS sourced)
+  build     colcon build the workspace (ws/)
+  down      stop the container
+  restart   restart the container
+  rebuild   rebuild the image from scratch (pull newer base)
+  logs      follow container logs
+  status    VM + container status
+  stop-vm   stop container and the Colima VM (frees RAM)
+USAGE
+  ;;
+esac

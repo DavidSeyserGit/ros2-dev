@@ -1,0 +1,15 @@
+services:
+  ros2:
+    build: .
+    image: ros2-jazzy-desktop:latest
+    container_name: ros2
+    hostname: ros2
+    ports:
+      - "127.0.0.1:6080:6080"   # browser desktop, localhost only (VNC has no password)
+    environment:
+      - RESOLUTION=${RESOLUTION:-1920x1080}
+      - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
+    volumes:
+      - ./ws:/home/ros/ws       # your colcon workspace, edited from the Mac
+    shm_size: 2gb
+    restart: unless-stopped

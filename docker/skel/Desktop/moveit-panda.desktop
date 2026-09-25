@@ -1,0 +1,6 @@
+[Desktop Entry]
+Type=Application
+Name=MoveIt Panda Demo
+Comment=RViz Motion Planning with OMPL / CHOMP / Pilz / STOMP
+Exec=xfce4-terminal --hold --title "MoveIt demo" -x bash -ic "ros2 launch arm_bringup moveit_demo.launch.py"
+Icon=applications-science

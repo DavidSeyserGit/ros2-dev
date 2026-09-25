@@ -1,0 +1,11 @@
+# ROS 2 environment (sourced from ~/.bashrc)
+source /opt/ros/jazzy/setup.bash
+[ -f /usr/share/colcon_argcomplete/hook/colcon-argcomplete.bash ] && source /usr/share/colcon_argcomplete/hook/colcon-argcomplete.bash
+[ -f ~/ws/install/setup.bash ] && source ~/ws/install/setup.bash
+
+alias cb='cd ~/ws && colcon build --symlink-install && source install/setup.bash'
+alias cbp='cd ~/ws && colcon build --symlink-install --packages-select'
+alias ct='cd ~/ws && colcon test && colcon test-result --verbose'
+alias rdi='cd ~/ws && rosdep install --from-paths src --ignore-src -r -y'
+alias panda='ros2 launch moveit_resources_panda_moveit_config demo.launch.py'
+cd ~/ws 2>/dev/null
