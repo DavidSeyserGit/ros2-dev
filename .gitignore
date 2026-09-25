@@ -6,3 +6,4 @@ core.*
 __pycache__/
 *.pyc
 .DS_Store
+ws/src/stiffness_planner_ws/
