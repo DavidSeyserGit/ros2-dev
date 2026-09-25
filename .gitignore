@@ -1,3 +1,5 @@
 ws/build/
 ws/install/
 ws/log/
+core
+core.*
