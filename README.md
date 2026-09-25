@@ -45,11 +45,23 @@ In RViz → MotionPlanning → **Context** tab, pick the pipeline (`ompl`, `chom
 `ws/src/arm_bringup/launch/moveit_demo.launch.py` is a template: point `MoveItConfigsBuilder`
 at your own `*_moveit_config` package to swap in your arm.
 
+## VS Code / Cursor (Dev Container)
+
+Open this folder in VS Code or Cursor, then run **Dev Containers: Reopen in Container**.
+The editor attaches to the same `ros2` container: terminal, ROS autocomplete, Python + C++ IntelliSense.
+After a `cb` build, C++ IntelliSense reads `ws/build/compile_commands.json`.
+
+## Troubleshooting
+
+```bash
+rosdev doctor   # checks VM, docker, container, desktop services, port 6080 and suggests fixes
+```
+
 ## Shell aliases (in the container)
 
 | alias | does |
 |---|---|
-| `cb` | `colcon build --symlink-install` + source |
+| `cb [args]` | `colcon build --symlink-install` + source + merge compile_commands |
 | `cbp <pkg>` | build selected packages |
 | `rdi` | `rosdep install` deps for `ws/src` |
 | `ct` | run tests |
@@ -63,3 +75,7 @@ at your own `*_moveit_config` package to swap in your arm.
   To change it: `colima stop && colima start --cpu N --memory N`.
 - Anything installed with `apt` inside a running container is lost on rebuild. Add it to the `Dockerfile` instead.
 - To start Colima automatically at login: `brew services start colima`.
+
+## License
+
+MIT, see [LICENSE](LICENSE).

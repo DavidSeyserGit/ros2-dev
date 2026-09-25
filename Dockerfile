@@ -18,7 +18,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       dbus-x11 x11-xserver-utils xdg-utils \
       libgl1 libglx-mesa0 libgl1-mesa-dri mesa-utils \
       fonts-dejavu fonts-ubuntu adwaita-icon-theme-full \
-      sudo git curl wget vim nano less htop tree tmux gdb ca-certificates \
+      sudo git curl wget vim nano less htop tree tmux gdb jq ca-certificates \
       build-essential cmake python3-pip python3-venv \
       python3-colcon-common-extensions python3-colcon-mixin python3-rosdep python3-vcstool \
     && rm -rf /var/lib/apt/lists/*

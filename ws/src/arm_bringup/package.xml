@@ -5,7 +5,7 @@
   <version>0.1.0</version>
   <description>Launches the MoveIt demo (RViz Motion Planning panel) with OMPL, CHOMP, Pilz and STOMP pipelines.</description>
   <maintainer email="david.t.seyser@gmail.com">David Seyser</maintainer>
-  <license>Apache-2.0</license>
+  <license>MIT</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
 

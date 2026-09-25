@@ -1,0 +1,41 @@
+{
+  // Open this repo in VS Code / Cursor → "Reopen in Container".
+  // Uses the same container as `rosdev up`, so the browser desktop keeps working.
+  "name": "ROS 2 Jazzy + MoveIt",
+  "dockerComposeFile": "../compose.yaml",
+  "service": "ros2",
+  "workspaceFolder": "/home/ros/ws",
+  "remoteUser": "ros",
+  "overrideCommand": false,
+  "shutdownAction": "none",
+  "forwardPorts": [6080],
+  "portsAttributes": { "6080": { "label": "Browser desktop (noVNC)", "onAutoForward": "silent" } },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-vscode.cpptools-extension-pack",
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "twxs.cmake",
+        "redhat.vscode-xml",
+        "redhat.vscode-yaml",
+        "ranch-hand-robotics.rde-pack"
+      ],
+      "settings": {
+        "terminal.integrated.defaultProfile.linux": "bash",
+        "python.defaultInterpreterPath": "/usr/bin/python3",
+        "python.analysis.extraPaths": [
+          "/opt/ros/jazzy/lib/python3.12/site-packages",
+          "/opt/ros/jazzy/local/lib/python3.12/dist-packages"
+        ],
+        "C_Cpp.default.includePath": [
+          "${workspaceFolder}/**",
+          "/opt/ros/jazzy/include/**"
+        ],
+        "C_Cpp.default.compileCommands": "${workspaceFolder}/build/compile_commands.json",
+        "files.associations": { "*.launch": "xml", "*.xacro": "xml", "*.urdf": "xml", "*.srdf": "xml" },
+        "files.watcherExclude": { "**/build/**": true, "**/install/**": true, "**/log/**": true }
+      }
+    }
+  }
+}

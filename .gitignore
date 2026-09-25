@@ -3,3 +3,6 @@ ws/install/
 ws/log/
 core
 core.*
+__pycache__/
+*.pyc
+.DS_Store
