@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Helper for the ROS 2 Jazzy + MoveIt browser-desktop container.
 set -euo pipefail
-cd "$(dirname "$0")"
+cd "$(dirname "$(realpath "$0")")"  # works via the global symlink too
 
 ensure_vm() {
   if ! colima status >/dev/null 2>&1; then
@@ -46,10 +46,11 @@ case "${1:-help}" in
                ask "  Really delete anyway?" || { echo "Kept folder."; exit 0; }
              fi
              dir=$(pwd); cd ..; rm -rf "$dir"; echo "Deleted $dir"
+             rm -f "$(brew --prefix)/bin/rosdev"
            fi
            echo "Done." ;;
   *) cat <<USAGE
-Usage: ./rosdev <command>
+Usage: rosdev <command>
   up        start VM + container, open the desktop in the browser
   open      open the browser desktop
   shell     bash shell inside the container (ROS sourced)

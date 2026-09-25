@@ -18,14 +18,16 @@ This installs Homebrew (if missing), Colima and the Docker CLI tools, starts the
 
 ## Daily use
 
+`rosdev` works from any folder (the installer links it into Homebrew's `bin`).
+
 ```bash
-./rosdev up        # starts Colima VM + container, opens the browser desktop
-./rosdev shell     # terminal inside the container (ROS already sourced)
-./rosdev build     # colcon build --symlink-install in ws/
-./rosdev down      # stop the container
-./rosdev stop-vm   # also stop the Colima VM to free RAM
-./rosdev update    # pull latest repo, rebuild image, restart
-./rosdev uninstall # remove everything (asks before each step)
+rosdev up        # starts Colima VM + container, opens the browser desktop
+rosdev shell     # terminal inside the container (ROS already sourced)
+rosdev build     # colcon build --symlink-install in ws/
+rosdev down      # stop the container
+rosdev stop-vm   # also stop the Colima VM to free RAM
+rosdev update    # pull latest repo, rebuild image, restart
+rosdev uninstall # remove everything (asks before each step)
 ```
 
 ## MoveIt demo
@@ -56,7 +58,7 @@ at your own `*_moveit_config` package to swap in your arm.
 ## Notes
 
 - Port 6080 is bound to `127.0.0.1` only, because the VNC desktop has no password.
-- Screen size: `RESOLUTION=2560x1440 ./rosdev up`. The browser URL uses `resize=scale`, which shrinks the whole desktop to fit the window.
+- Screen size: `RESOLUTION=2560x1440 rosdev up`. The browser URL uses `resize=scale`, which shrinks the whole desktop to fit the window.
 - The VM was created with `colima start --cpu 6 --memory 8 --disk 80 --vm-type vz --vz-rosetta`.
   To change it: `colima stop && colima start --cpu N --memory N`.
 - Anything installed with `apt` inside a running container is lost on rebuild. Add it to the `Dockerfile` instead.

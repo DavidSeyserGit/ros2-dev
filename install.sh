@@ -110,6 +110,9 @@ step
 if [ -d "$DIR/.git" ]; then run "Updating repo → $DIR" git -C "$DIR" pull --ff-only
 else run "Cloning repo → $DIR" git clone "$REPO" "$DIR"; fi
 
+link_cmd() { ln -sf "$DIR/rosdev" "$(brew --prefix)/bin/rosdev"; }
+run "Linking global 'rosdev' command" link_cmd
+
 step; run "Building image (first time ~10 min)" docker compose -f "$DIR/compose.yaml" --progress plain build
 
 start_container() {
@@ -124,6 +127,6 @@ open "$URL" 2>/dev/null || true
 
 printf '\n  %s%s✓ All set!%s\n\n' "$GRN" "$B" "$R"
 printf '  %sDesktop%s   %s\n' "$B" "$R" "$URL"
-printf '  %sShell%s     cd %s && ./rosdev shell\n' "$B" "$R" "$DIR"
+printf '  %sShell%s     rosdev shell   %s(works from any folder)%s\n' "$B" "$R" "$D" "$R"
 printf '  %sDemo%s      ros2 launch arm_bringup moveit_demo.launch.py\n' "$B" "$R"
-printf '  %sStop%s      ./rosdev stop-vm\n\n' "$B" "$R"
+printf '  %sStop%s      rosdev stop-vm\n\n' "$B" "$R"
