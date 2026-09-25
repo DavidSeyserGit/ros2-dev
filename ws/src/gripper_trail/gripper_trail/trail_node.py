@@ -17,7 +17,10 @@ class TrailNode(Node):
         self.tip_frame = self.declare_parameter('tip_frame', 'panda_hand').value
         self.lifetime = self.declare_parameter('trail_lifetime', 10.0).value  # seconds until a point fully fades
         self.min_step = self.declare_parameter('min_step', 0.002).value       # metres; skip points closer than this
-        self.width = self.declare_parameter('line_width', 0.005).value
+        self.declare_parameter('line_width', 0.005)
+        self.declare_parameter('color_new', [1.0, 0.3, 0.0])  # RGB of the newest part of the line
+        self.declare_parameter('color_old', [1.0, 0.8, 0.0])  # RGB it blends to as it fades
+        self.declare_parameter('fade', True)                  # False = solid line, no transparency
         rate = self.declare_parameter('rate', 30.0).value
 
         # TF: the buffer stores recent transforms, the listener fills it from /tf and /tf_static.
@@ -31,6 +34,13 @@ class TrailNode(Node):
 
     def tick(self):
         now = self.get_clock().now()
+        # Read parameters every tick so `ros2 param set` / rqt_reconfigure take effect live.
+        self.lifetime = self.get_parameter('trail_lifetime').value
+        self.min_step = self.get_parameter('min_step').value
+        width = self.get_parameter('line_width').value
+        c_new = self.get_parameter('color_new').value
+        c_old = self.get_parameter('color_old').value
+        fade = self.get_parameter('fade').value
         now_s = now.nanoseconds * 1e-9
 
         # Ask TF where the gripper is right now (Time() = latest available).
@@ -55,13 +65,15 @@ class TrailNode(Node):
         m.type = Marker.LINE_STRIP
         m.action = Marker.ADD
         m.pose.orientation.w = 1.0
-        m.scale.x = self.width  # line width; only scale.x is used for LINE_STRIP
+        m.scale.x = width  # line width; only scale.x is used for LINE_STRIP
         m.lifetime = Duration(seconds=1.0).to_msg()
         # Per-vertex colors: new points are bright/opaque, old points fade to transparent.
         for pt, s in self.points:
             age = (now_s - s) / self.lifetime  # 0 = new, 1 = gone
             m.points.append(pt)
-            m.colors.append(ColorRGBA(r=1.0, g=0.3 + 0.5 * age, b=0.0, a=max(0.0, 1.0 - age)))
+            r, g, b = (n + (o - n) * age for n, o in zip(c_new, c_old))
+            a = max(0.0, 1.0 - age) if fade else 1.0
+            m.colors.append(ColorRGBA(r=r, g=g, b=b, a=a))
 
         if len(m.points) >= 2:  # a LINE_STRIP needs at least two points
             self.pub.publish(m)
