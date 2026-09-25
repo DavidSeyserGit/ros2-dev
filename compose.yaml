@@ -3,7 +3,7 @@ name: ros2
 services:
   ros2:
     build: .
-    image: ros2-jazzy-desktop:latest
+    image: ghcr.io/davidseysergit/ros2-dev:${ROS2_DEV_TAG:-latest}   # prebuilt; `rosdev rebuild` builds locally
     container_name: ros2
     hostname: ros2
     ports:

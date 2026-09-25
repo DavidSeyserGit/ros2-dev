@@ -14,7 +14,7 @@ Runs a full ROS 2 desktop in a container and shows it in your browser at
 curl -fsSL https://raw.githubusercontent.com/DavidSeyserGit/ros2-dev/main/install.sh | bash
 ```
 
-This installs Homebrew (if missing), Colima and the Docker CLI tools, starts the VM, clones this repo to `~/ros2`, builds the image and opens the desktop.
+This installs Homebrew (if missing), Colima and the Docker CLI tools, starts the VM, clones this repo to `~/ros2`, downloads the prebuilt image (built by GitHub Actions for arm64 + amd64) and opens the desktop.
 
 ## Daily use
 
@@ -73,7 +73,8 @@ rosdev doctor   # checks VM, docker, container, desktop services, port 6080 and 
 - Screen size: `RESOLUTION=2560x1440 rosdev up`. The browser URL uses `resize=scale`, which shrinks the whole desktop to fit the window.
 - The VM was created with `colima start --cpu 6 --memory 8 --disk 80 --vm-type vz --vz-rosetta`.
   To change it: `colima stop && colima start --cpu N --memory N`.
-- Anything installed with `apt` inside a running container is lost on rebuild. Add it to the `Dockerfile` instead.
+- Anything installed with `apt` inside a running container is lost on rebuild. Add it to the `Dockerfile` instead, then `rosdev rebuild` to build locally (pushing the change makes GitHub publish a new image).
+- Pin a version: `ROS2_DEV_TAG=v0.1.0 rosdev up`.
 - To start Colima automatically at login: `brew services start colima`.
 
 ## License

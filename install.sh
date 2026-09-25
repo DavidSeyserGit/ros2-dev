@@ -113,7 +113,12 @@ else run "Cloning repo → $DIR" git clone "$REPO" "$DIR"; fi
 link_cmd() { ln -sf "$DIR/rosdev" "$(brew --prefix)/bin/rosdev"; }
 run "Linking global 'rosdev' command" link_cmd
 
-step; run "Building image (first time ~10 min)" docker compose -f "$DIR/compose.yaml" --progress plain build
+get_image() {
+  docker compose -f "$DIR/compose.yaml" pull && return 0
+  echo "Prebuilt image not available, building locally (~10 min)"
+  docker compose -f "$DIR/compose.yaml" --progress plain build
+}
+step; run "Downloading image (~3 GB)" get_image
 
 start_container() {
   docker compose -f "$DIR/compose.yaml" up -d

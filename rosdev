@@ -11,7 +11,7 @@ ensure_vm() {
 }
 
 case "${1:-help}" in
-  up)      ensure_vm; docker compose up -d --build
+  up)      ensure_vm; docker compose up -d
            echo "Desktop: http://localhost:6080/vnc.html?autoconnect=1&resize=scale"
            sleep 3; open "http://localhost:6080/vnc.html?autoconnect=1&resize=scale" ;;
   open)    open "http://localhost:6080/vnc.html?autoconnect=1&resize=scale" ;;
@@ -19,7 +19,7 @@ case "${1:-help}" in
   restart) ensure_vm; docker compose restart ;;
   shell)   ensure_vm; docker compose exec -it ros2 bash -l ;;
   build)   docker compose exec ros2 bash -lc 'cd ~/ws && colcon build --symlink-install' ;;
-  rebuild) ensure_vm; docker compose build --pull && docker compose up -d ;;
+  rebuild) ensure_vm; docker compose build --pull && docker compose up -d ;;   # local build, e.g. after Dockerfile edits
   logs)    docker compose logs -f ;;
   status)  colima status; docker compose ps ;;
   stop-vm) docker compose down; colima stop ;;
@@ -41,7 +41,7 @@ case "${1:-help}" in
              [ "$ctx" = colima ] && ok "docker context: colima" || bad "docker context is '$ctx'" "docker context use colima"
              df=$(colima ssh -- df -BG --output=avail /var/lib/docker 2>/dev/null | tail -1 | tr -dc 0-9)
              [ -n "$df" ] && { [ "$df" -ge 10 ] && ok "VM disk free: ${df} GB" || warn "VM disk free: ${df} GB" "docker system prune"; }
-             if docker image inspect ros2-jazzy-desktop >/dev/null 2>&1; then ok "image built"; else bad "image not built" "rosdev up"; fi
+             if [ -n "$(docker compose images -q 2>/dev/null)" ] || docker image inspect "$(docker compose config --images | head -1)" >/dev/null 2>&1; then ok "image present"; else bad "image missing" "rosdev up"; fi
              if [ "$(docker inspect -f '{{.State.Running}}' ros2 2>/dev/null)" = true ]; then
                ok "container running"
                st=$(docker compose exec -T ros2 supervisorctl -c /etc/supervisor/desktop.conf status 2>/dev/null)
@@ -61,7 +61,7 @@ case "${1:-help}" in
            echo; [ $fails -eq 0 ] && echo "  ${G}All good.${N}" || { echo "  ${Rd}$fails problem(s) found.${N}"; exit 1; } ;;
   update)  ensure_vm
            git pull --ff-only
-           docker compose build --pull
+           docker compose pull || docker compose build --pull
            docker compose up -d
            echo "Updated. Desktop: http://localhost:6080/vnc.html?autoconnect=1&resize=scale" ;;
   uninstall)
@@ -93,12 +93,12 @@ Usage: rosdev <command>
   build     colcon build the workspace (ws/)
   down      stop the container
   restart   restart the container
-  rebuild   rebuild the image from scratch (pull newer base)
+  rebuild   build the image locally (after editing the Dockerfile)
   logs      follow container logs
   status    VM + container status
   stop-vm   stop container and the Colima VM (frees RAM)
   doctor    check the whole setup and suggest fixes
-  update    git pull + rebuild image + restart
+  update    git pull + pull newest image + restart
   uninstall remove container/image, optionally VM, tools and this folder (asks each step)
 USAGE
   ;;
