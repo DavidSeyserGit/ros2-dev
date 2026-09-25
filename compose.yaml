@@ -1,3 +1,5 @@
+name: ros2
+
 services:
   ros2:
     build: .
