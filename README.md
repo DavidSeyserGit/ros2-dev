@@ -24,6 +24,8 @@ This installs Homebrew (if missing), Colima and the Docker CLI tools, starts the
 ./rosdev build     # colcon build --symlink-install in ws/
 ./rosdev down      # stop the container
 ./rosdev stop-vm   # also stop the Colima VM to free RAM
+./rosdev update    # pull latest repo, rebuild image, restart
+./rosdev uninstall # remove everything (asks before each step)
 ```
 
 ## MoveIt demo

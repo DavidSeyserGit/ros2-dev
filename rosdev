@@ -23,6 +23,31 @@ case "${1:-help}" in
   logs)    docker compose logs -f ;;
   status)  colima status; docker compose ps ;;
   stop-vm) docker compose down; colima stop ;;
+  update)  ensure_vm
+           git pull --ff-only
+           docker compose build --pull
+           docker compose up -d
+           echo "Updated. Desktop: http://localhost:6080/vnc.html?autoconnect=1&resize=scale" ;;
+  uninstall)
+           ask() { read -r -p "$1 [y/N] " a </dev/tty; [[ "$a" =~ ^[Yy]$ ]]; }
+           echo "Uninstalling ROS 2 dev environment. Each step asks first."
+           if colima status >/dev/null 2>&1; then
+             docker compose down --rmi all --volumes || true
+           fi
+           if ask "Delete the Colima VM (frees disk; removes ALL images/containers in it)?"; then
+             colima delete --force
+           fi
+           if ask "Uninstall colima + docker CLI via Homebrew?"; then
+             brew uninstall colima docker-compose docker-buildx docker || true
+           fi
+           if ask "Delete this folder $(pwd) INCLUDING your code in ws/src?"; then
+             if [ -n "$(git status --porcelain 2>/dev/null)" ] || [ -n "$(git log @{u}.. 2>/dev/null)" ]; then
+               echo "  Warning: uncommitted or unpushed changes here."
+               ask "  Really delete anyway?" || { echo "Kept folder."; exit 0; }
+             fi
+             dir=$(pwd); cd ..; rm -rf "$dir"; echo "Deleted $dir"
+           fi
+           echo "Done." ;;
   *) cat <<USAGE
 Usage: ./rosdev <command>
   up        start VM + container, open the desktop in the browser
@@ -35,6 +60,8 @@ Usage: ./rosdev <command>
   logs      follow container logs
   status    VM + container status
   stop-vm   stop container and the Colima VM (frees RAM)
+  update    git pull + rebuild image + restart
+  uninstall remove container/image, optionally VM, tools and this folder (asks each step)
 USAGE
   ;;
 esac
