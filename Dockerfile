@@ -50,9 +50,9 @@ RUN (userdel -r ubuntu 2>/dev/null || true) \
     && chmod 0440 /etc/sudoers.d/${USERNAME}
 
 COPY docker/supervisord.conf /etc/supervisor/desktop.conf
-COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
+COPY docker/entrypoint.sh docker/start-desktop.sh /usr/local/bin/
 COPY docker/skel/ /home/${USERNAME}/
-RUN chmod +x /usr/local/bin/entrypoint.sh \
+RUN chmod +x /usr/local/bin/entrypoint.sh /usr/local/bin/start-desktop.sh \
     && ln -sf /usr/share/novnc/vnc.html /usr/share/novnc/index.html \
     && sed -i '1i source ~/.bash_ros  # before the interactive-only guard so exec/login shells get ROS too' /home/${USERNAME}/.bashrc \
     && cp /etc/xdg/xfce4/panel/default.xml /home/${USERNAME}/.config/xfce4/xfconf/xfce-perchannel-xml/xfce4-panel.xml \
