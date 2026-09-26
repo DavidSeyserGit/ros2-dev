@@ -48,6 +48,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       python3-pykdl python3-numpy python3-yaml python3-pytest \
       ros-jazzy-ros-gz-sim ros-jazzy-ros-gz-bridge ros-jazzy-gz-ros2-control \
       ros-jazzy-interactive-markers ros-jazzy-ros-testing \
+      ros-jazzy-ur-description ros-jazzy-ur-moveit-config \
     && rm -rf /var/lib/apt/lists/* \
     && pip3 install --no-cache-dir --break-system-packages ompl urdf-parser-py
 
