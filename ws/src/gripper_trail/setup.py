@@ -19,6 +19,7 @@ setup(
     entry_points={
         'console_scripts': [
             'trail_node = gripper_trail.trail_node:main',
+            'waypoints = gripper_trail.waypoints:main',
         ],
     },
 )
