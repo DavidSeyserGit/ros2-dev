@@ -16,6 +16,16 @@ curl -fsSL https://raw.githubusercontent.com/DavidSeyserGit/ros2-dev/main/instal
 
 This installs Homebrew (if missing), Colima and the Docker CLI tools, starts the VM, clones this repo to `~/ros2`, downloads the prebuilt image (built by GitHub Actions for arm64 + amd64) and opens the desktop.
 
+## Where things live
+
+| | |
+|---|---|
+| `~/ros2` (this repo) | the environment: Dockerfile, `rosdev`, desktop. Update with `rosdev update`; don't put your code here. |
+| `~/ros2_ws/src` | **your workspace**: your packages, your git repos. Mounted into the container as `~/ws`. Location: `ROS2_WS` in `~/ros2/.env`; `rosdev ws` prints it. |
+| `~/ros2/local/Dockerfile` | **your additions to the image** (extra apt / pip packages), built on top of it by `rosdev up / rebuild / update`. Git-ignored; template in `local.example/`. |
+
+`.env` and `local/` are git-ignored, so nothing of yours ends up in this repo.
+
 ## Daily use
 
 `rosdev` works from any folder (the installer links it into Homebrew's `bin`).
@@ -73,7 +83,7 @@ rosdev doctor   # checks VM, docker, container, desktop services, port 6080 and 
 - Screen size: `RESOLUTION=2560x1440 rosdev up`. The browser URL uses `resize=scale`, which shrinks the whole desktop to fit the window.
 - The VM was created with `colima start --cpu 6 --memory 8 --disk 80 --vm-type vz --vz-rosetta`.
   To change it: `colima stop && colima start --cpu N --memory N`.
-- Anything installed with `apt` inside a running container is lost on rebuild. Add it to the `Dockerfile` instead, then `rosdev rebuild` to build locally (pushing the change makes GitHub publish a new image).
+- Anything installed with `apt` inside a running container is lost when the container is recreated. Put it in `local/Dockerfile`; `rosdev up` builds it in.
 - Pin a version: `ROS2_DEV_TAG=v0.1.0 rosdev up`.
 - To start Colima automatically at login: `brew services start colima`.
 

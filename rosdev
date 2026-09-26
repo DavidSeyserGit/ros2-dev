@@ -3,6 +3,29 @@
 set -euo pipefail
 cd "$(dirname "$(realpath "$0")")"  # works via the global symlink too
 
+# Your settings (git-ignored): .env with ROS2_WS = your workspace; local/Dockerfile = your
+# additions to the image (built on top of it, see local.example/Dockerfile)
+BASE_IMAGE="ghcr.io/davidseysergit/ros2-dev:$(grep -s '^ROS2_DEV_TAG=' .env | cut -d= -f2- || true)"
+[ "$BASE_IMAGE" = "ghcr.io/davidseysergit/ros2-dev:" ] && BASE_IMAGE="${BASE_IMAGE}${ROS2_DEV_TAG:-latest}"
+LOCAL_IMAGE="ros2-dev-local:latest"
+[ -f local/Dockerfile ] && export ROS2_DEV_IMAGE="$LOCAL_IMAGE"
+
+ws_dir() {  # the workspace on the Mac
+  local w
+  w=$(grep -s '^ROS2_WS=' .env | cut -d= -f2- || true)
+  w=${w:-./ws}
+  w=${w/#\~/$HOME}
+  (cd "$w" 2>/dev/null && pwd) || echo "$w"
+}
+
+build_local() {  # local/Dockerfile on top of the ros2-dev image (cached: fast when unchanged)
+  [ -f local/Dockerfile ] || return 0
+  docker image inspect "$BASE_IMAGE" >/dev/null 2>&1 || docker pull "$BASE_IMAGE" \
+    || ROS2_DEV_IMAGE="$BASE_IMAGE" docker compose build
+  echo "Building your additions (local/Dockerfile)..."
+  docker build -q --build-arg BASE="$BASE_IMAGE" -t "$LOCAL_IMAGE" -f local/Dockerfile local >/dev/null
+}
+
 ensure_vm() {
   if ! colima status >/dev/null 2>&1; then
     echo "Starting Colima VM..."
@@ -11,7 +34,7 @@ ensure_vm() {
 }
 
 case "${1:-help}" in
-  up)      ensure_vm; docker compose up -d
+  up)      ensure_vm; build_local; docker compose up -d
            echo "Desktop: http://localhost:6080/vnc.html?autoconnect=1&resize=scale"
            sleep 3; open "http://localhost:6080/vnc.html?autoconnect=1&resize=scale" ;;
   open)    open "http://localhost:6080/vnc.html?autoconnect=1&resize=scale" ;;
@@ -19,7 +42,11 @@ case "${1:-help}" in
   restart) ensure_vm; docker compose restart ;;
   shell)   ensure_vm; docker compose exec -it ros2 bash -l ;;
   build)   docker compose exec ros2 bash -lc 'cd ~/ws && colcon build --symlink-install' ;;
-  rebuild) ensure_vm; docker compose build --pull && docker compose up -d ;;   # local build, e.g. after Dockerfile edits
+  exec)    shift; docker compose exec -T ros2 bash -lc "$*" ;;   # e.g. rosdev exec 'ros2 topic list'
+  ws)      ws_dir ;;
+  rebuild) ensure_vm   # local build, e.g. after Dockerfile edits
+           ROS2_DEV_IMAGE="$BASE_IMAGE" docker compose build --pull
+           build_local; docker compose up -d ;;
   logs)    docker compose logs -f ;;
   status)  colima status; docker compose ps ;;
   stop-vm) docker compose down; colima stop ;;
@@ -56,13 +83,17 @@ case "${1:-help}" in
              bad "Colima VM not running" "colima start"
            fi
            curl -fs -o /dev/null http://localhost:6080/vnc.html && ok "browser desktop reachable: http://localhost:6080" || bad "port 6080 not reachable" "rosdev up; check nothing else uses 6080 (lsof -i :6080)"
-           [ -d ws/src ] && ok "workspace: $(pwd)/ws ($(find ws/src -name package.xml -not -path "*/build/*" | wc -l | tr -d ' ') packages)"
+           w=$(ws_dir)
+           [ -d "$w/src" ] && ok "workspace: $w ($(find "$w/src" -name package.xml -not -path "*/build/*" -not -path "*/install/*" | wc -l | tr -d ' ') packages)" \
+             || bad "workspace $w has no src/" "mkdir -p $w/src (set ROS2_WS in $(pwd)/.env)"
+           [ -f local/Dockerfile ] && ok "your additions: local/Dockerfile (image $LOCAL_IMAGE)" \
+             || warn "no local/Dockerfile" "optional: cp -r local.example local, add your packages, rosdev up"
            [ -L "$(brew --prefix)/bin/rosdev" ] && ok "global 'rosdev' command" || warn "no global 'rosdev' command" "ln -sf $(pwd)/rosdev $(brew --prefix)/bin/rosdev"
            echo; [ $fails -eq 0 ] && echo "  ${G}All good.${N}" || { echo "  ${Rd}$fails problem(s) found.${N}"; exit 1; } ;;
   update)  ensure_vm
            git pull --ff-only
-           docker compose pull || docker compose build --pull
-           docker compose up -d
+           docker pull "$BASE_IMAGE" || ROS2_DEV_IMAGE="$BASE_IMAGE" docker compose build --pull
+           build_local; docker compose up -d
            echo "Updated. Desktop: http://localhost:6080/vnc.html?autoconnect=1&resize=scale" ;;
   uninstall)
            ask() { read -r -p "$1 [y/N] " a </dev/tty; [[ "$a" =~ ^[Yy]$ ]]; }
@@ -76,7 +107,8 @@ case "${1:-help}" in
            if ask "Uninstall colima + docker CLI via Homebrew?"; then
              brew uninstall colima docker-compose docker-buildx docker || true
            fi
-           if ask "Delete this folder $(pwd) INCLUDING your code in ws/src?"; then
+           echo "Your workspace $(ws_dir) is kept (delete it yourself if you want)."
+           if ask "Delete this folder $(pwd)?"; then
              if [ -n "$(git status --porcelain 2>/dev/null)" ] || [ -n "$(git log @{u}.. 2>/dev/null)" ]; then
                echo "  Warning: uncommitted or unpushed changes here."
                ask "  Really delete anyway?" || { echo "Kept folder."; exit 0; }
@@ -90,10 +122,12 @@ Usage: rosdev <command>
   up        start VM + container, open the desktop in the browser
   open      open the browser desktop
   shell     bash shell inside the container (ROS sourced)
-  build     colcon build the workspace (ws/)
+  exec CMD  run a command in the container, e.g. rosdev exec 'ros2 topic list'
+  build     colcon build the workspace
+  ws        print the workspace folder (ROS2_WS in .env, default ./ws)
   down      stop the container
   restart   restart the container
-  rebuild   build the image locally (after editing the Dockerfile)
+  rebuild   build the image locally (after editing the Dockerfile / local/Dockerfile)
   logs      follow container logs
   status    VM + container status
   stop-vm   stop container and the Colima VM (frees RAM)

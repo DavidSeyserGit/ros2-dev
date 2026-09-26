@@ -42,16 +42,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       ros-jazzy-rmw-cyclonedds-cpp \
     && rm -rf /var/lib/apt/lists/*
 
-# SOMP (stiffness_planner_ws): KDL, Gazebo sim, OMPL Python bindings
-# (ros-jazzy-ompl ships only the C++ library; the bindings come from PyPI)
-RUN apt-get update && apt-get install -y --no-install-recommends \
-      python3-pykdl python3-numpy python3-yaml python3-pytest \
-      ros-jazzy-ros-gz-sim ros-jazzy-ros-gz-bridge ros-jazzy-gz-ros2-control \
-      ros-jazzy-interactive-markers ros-jazzy-ros-testing \
-      ros-jazzy-ur-description ros-jazzy-ur-moveit-config \
-    && rm -rf /var/lib/apt/lists/* \
-    && pip3 install --no-cache-dir --break-system-packages ompl urdf-parser-py
-
 # Non-root user (replace the stock "ubuntu" user that owns UID 1000 on noble)
 RUN (userdel -r ubuntu 2>/dev/null || true) \
     && groupadd --gid ${USER_GID} ${USERNAME} \

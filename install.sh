@@ -4,10 +4,11 @@
 set -euo pipefail
 
 REPO="${ROS2_DEV_REPO:-https://github.com/DavidSeyserGit/ros2-dev.git}"
-DIR="${ROS2_DEV_DIR:-$HOME/ros2}"
+DIR="${ROS2_DEV_DIR:-$HOME/ros2}"         # the environment (this repo)
+WS="${ROS2_WS_DIR:-$HOME/ros2_ws}"        # your workspace, kept separate from the repo
 CPUS="${COLIMA_CPUS:-6}"; MEM="${COLIMA_MEM:-8}"; DISK="${COLIMA_DISK:-80}"
 LOG="${TMPDIR:-/tmp}/ros2-dev-install.log"; : > "$LOG"
-TOTAL=7; STEP=0
+TOTAL=8; STEP=0
 
 # ---------- UI ----------
 if [ -t 1 ]; then
@@ -111,6 +112,16 @@ if [ -d "$DIR/.git" ]; then run "Updating repo → $DIR" git -C "$DIR" pull --ff
 else run "Cloning repo → $DIR" git clone "$REPO" "$DIR"; fi
 
 link_cmd() { ln -sf "$DIR/rosdev" "$(brew --prefix)/bin/rosdev"; }
+
+setup_workspace() {  # separate workspace + your settings (.env, local/), never overwritten
+  mkdir -p "$WS/src"
+  if [ -z "$(ls -A "$WS/src")" ]; then
+    cp -r "$DIR/ws/src/arm_bringup" "$WS/src/"   # an example package to start from
+  fi
+  [ -f "$WS/CLAUDE.md" ] || cp "$DIR/workspace.example/CLAUDE.md" "$WS/CLAUDE.md"
+  [ -f "$DIR/.env" ] || echo "ROS2_WS=$WS" > "$DIR/.env"
+  [ -d "$DIR/local" ] || cp -r "$DIR/local.example" "$DIR/local"
+}
 run "Linking global 'rosdev' command" link_cmd
 
 get_image() {
@@ -118,6 +129,8 @@ get_image() {
   echo "Prebuilt image not available, building locally (~10 min)"
   docker compose -f "$DIR/compose.yaml" --progress plain build
 }
+step; run "Setting up your workspace → $WS" setup_workspace
+
 step; run "Downloading image (~3 GB)" get_image
 
 start_container() {
@@ -133,5 +146,7 @@ open "$URL" 2>/dev/null || true
 printf '\n  %s%s✓ All set!%s\n\n' "$GRN" "$B" "$R"
 printf '  %sDesktop%s   %s\n' "$B" "$R" "$URL"
 printf '  %sShell%s     rosdev shell   %s(works from any folder)%s\n' "$B" "$R" "$D" "$R"
+printf '  %sWorkspace%s %s/src   %s(your packages; edit on the Mac)%s\n' "$B" "$R" "$WS" "$D" "$R"
+printf '  %sTool%s      %s   %s(rosdev update keeps it current)%s\n' "$B" "$R" "$DIR" "$D" "$R"
 printf '  %sDemo%s      ros2 launch arm_bringup moveit_demo.launch.py\n' "$B" "$R"
 printf '  %sStop%s      rosdev stop-vm\n\n' "$B" "$R"

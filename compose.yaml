@@ -3,7 +3,8 @@ name: ros2
 services:
   ros2:
     build: .
-    image: ghcr.io/davidseysergit/ros2-dev:${ROS2_DEV_TAG:-latest}   # prebuilt; `rosdev rebuild` builds locally
+    # prebuilt image; `rosdev rebuild` builds it locally, local/Dockerfile (if present) extends it
+    image: ${ROS2_DEV_IMAGE:-ghcr.io/davidseysergit/ros2-dev:${ROS2_DEV_TAG:-latest}}
     container_name: ros2
     hostname: ros2
     ports:
@@ -12,6 +13,6 @@ services:
       - RESOLUTION=${RESOLUTION:-1920x1080}
       - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
     volumes:
-      - ./ws:/home/ros/ws       # your colcon workspace, edited from the Mac
+      - ${ROS2_WS:-./ws}:/home/ros/ws   # your colcon workspace (ROS2_WS in .env), edited from the Mac
     shm_size: 2gb
     restart: unless-stopped
