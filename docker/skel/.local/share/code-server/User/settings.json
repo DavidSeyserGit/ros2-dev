@@ -1,0 +1,15 @@
+{
+  "workbench.startupEditor": "none",
+  "security.workspace.trust.enabled": false,
+  "telemetry.telemetryLevel": "off",
+  "terminal.integrated.defaultProfile.linux": "bash",
+  "terminal.integrated.profiles.linux": { "bash": { "path": "/bin/bash", "args": ["-l"] } },
+  "python.defaultInterpreterPath": "/usr/bin/python3",
+  "python.analysis.extraPaths": [
+    "/opt/ros/jazzy/lib/python3.12/site-packages",
+    "/opt/ros/jazzy/local/lib/python3.12/dist-packages"
+  ],
+  "clangd.arguments": ["--compile-commands-dir=/home/ros/ws/build", "--header-insertion=never"],
+  "files.associations": { "*.launch": "xml", "*.xacro": "xml", "*.urdf": "xml", "*.srdf": "xml" },
+  "files.watcherExclude": { "**/build/**": true, "**/install/**": true, "**/log/**": true }
+}

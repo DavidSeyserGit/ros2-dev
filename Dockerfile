@@ -42,6 +42,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       ros-jazzy-rmw-cyclonedds-cpp \
     && rm -rf /var/lib/apt/lists/*
 
+# VS Code in the browser (code-server, :8080) + clangd for C++ IntelliSense
+ARG CODE_SERVER_VERSION=4.139.1
+RUN apt-get update && apt-get install -y --no-install-recommends clangd \
+    && arch=$(dpkg --print-architecture) \
+    && curl -fsSL -o /tmp/code-server.deb \
+       "https://github.com/coder/code-server/releases/download/v${CODE_SERVER_VERSION}/code-server_${CODE_SERVER_VERSION}_${arch}.deb" \
+    && apt-get install -y /tmp/code-server.deb \
+    && rm -f /tmp/code-server.deb && rm -rf /var/lib/apt/lists/*
+
 # Non-root user (replace the stock "ubuntu" user that owns UID 1000 on noble)
 RUN (userdel -r ubuntu 2>/dev/null || true) \
     && groupadd --gid ${USER_GID} ${USERNAME} \
@@ -60,7 +69,9 @@ RUN chmod +x /usr/local/bin/entrypoint.sh /usr/local/bin/start-desktop.sh \
 
 USER ${USERNAME}
 WORKDIR /home/${USERNAME}/ws
-RUN rosdep update --rosdistro jazzy
+RUN rosdep update --rosdistro jazzy \
+    && code-server --install-extension ms-python.python \
+                   --install-extension llvm-vs-code-extensions.vscode-clangd >/dev/null
 
 ENV DISPLAY=:1 \
     LIBGL_ALWAYS_SOFTWARE=1 \
@@ -68,5 +79,5 @@ ENV DISPLAY=:1 \
     RESOLUTION=1920x1080 \
     RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 
-EXPOSE 6080
+EXPOSE 6080 8080
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

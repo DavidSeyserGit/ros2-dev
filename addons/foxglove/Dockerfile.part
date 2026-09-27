@@ -1,0 +1,6 @@
+# Foxglove bridge (ws://localhost:8765): connect with the Foxglove app
+USER root
+RUN apt-get update && apt-get install -y --no-install-recommends ros-jazzy-foxglove-bridge \
+    && rm -rf /var/lib/apt/lists/*
+COPY addons/foxglove/foxglove.conf /etc/supervisor/conf.d/foxglove.conf
+USER ros

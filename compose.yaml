@@ -9,10 +9,12 @@ services:
     hostname: ros2
     ports:
       - "127.0.0.1:6080:6080"   # browser desktop, localhost only (VNC has no password)
+      - "127.0.0.1:8080:8080"   # VS Code in the browser (code-server), localhost only
     environment:
       - RESOLUTION=${RESOLUTION:-1920x1080}
       - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
     volumes:
       - ${ROS2_WS:-./ws}:/home/ros/ws   # your colcon workspace (ROS2_WS in .env), edited from the Mac
+      - ./tools:/opt/rosdev:ro          # rosdev helpers (top, package templates), updated by git pull
     shm_size: 2gb
     restart: unless-stopped

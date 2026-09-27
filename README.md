@@ -33,12 +33,20 @@ This installs Homebrew (if missing), Colima and the Docker CLI tools, starts the
 ```bash
 rosdev up        # starts Colima VM + container, opens the browser desktop
 rosdev shell     # terminal inside the container (ROS already sourced)
+rosdev code      # opens VS Code in the browser on port 8080
 rosdev build     # colcon build --symlink-install in ws/
+rosdev new NAME  # creates a small Python package; add `cpp` for C++
+rosdev top       # live nodes, topic rates, CPU and RAM
+rosdev ws list   # list known workspaces
 rosdev down      # stop the container
 rosdev stop-vm   # also stop the Colima VM to free RAM
 rosdev update    # pull latest repo, rebuild image, restart
 rosdev uninstall # remove everything (asks before each step)
 ```
+
+Optional add-ons are kept in the repository and built into your local image when
+enabled. For example, `rosdev addon add foxglove` installs the Foxglove bridge and
+maps it to `ws://localhost:8765`; use `rosdev addon list` to see what is available.
 
 ## MoveIt demo
 
@@ -56,6 +64,9 @@ In RViz → MotionPlanning → **Context** tab, pick the pipeline (`ompl`, `chom
 at your own `*_moveit_config` package to swap in your arm.
 
 ## VS Code / Cursor (Dev Container)
+
+For an editor in the browser, run `rosdev code` and open `http://localhost:8080`.
+It serves the mounted workspace with Python and C++ language support.
 
 Open this folder in VS Code or Cursor, then run **Dev Containers: Reopen in Container**.
 The editor attaches to the same `ros2` container: terminal, ROS autocomplete, Python + C++ IntelliSense.
@@ -84,7 +95,7 @@ rosdev doctor   # checks VM, docker, container, desktop services, port 6080 and 
 - The VM was created with `colima start --cpu 6 --memory 8 --disk 80 --vm-type vz --vz-rosetta`.
   To change it: `colima stop && colima start --cpu N --memory N`.
 - Anything installed with `apt` inside a running container is lost when the container is recreated. Put it in `local/Dockerfile`; `rosdev up` builds it in.
-- Pin a version: `ROS2_DEV_TAG=v0.1.0 rosdev up`.
+- Pin a version: `ROS2_DEV_TAG=v0.2.0 rosdev up`.
 - To start Colima automatically at login: `brew services start colima`.
 
 ## License
