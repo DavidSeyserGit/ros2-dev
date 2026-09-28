@@ -1,0 +1,5 @@
+# Only image inputs belong in the build context, never workspaces or local data.
+*
+!Dockerfile
+!docker/
+!docker/**

@@ -1,0 +1,19 @@
+name: checks
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  cli:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Shell syntax
+        run: |
+          for script in rosdev install.sh docker/*.sh tools/*.sh; do
+            bash -n "$script" || exit
+          done
+      - name: CLI regression tests (no runtime required)
+        run: python3 -m unittest discover -s tests -p 'test_*.py' -v

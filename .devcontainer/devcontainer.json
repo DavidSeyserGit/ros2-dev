@@ -1,7 +1,8 @@
 {
   // Open this repo in VS Code / Cursor → "Reopen in Container".
-  // Uses the same container as `rosdev up`, so the browser desktop keeps working.
-  "name": "ROS 2 Jazzy + MoveIt",
+  // Legacy Docker backend: requires Docker; does not attach to Apple's container.
+  // Stop the native rosdev container first to free the desktop/editor ports.
+  "name": "ROS 2 Jazzy + MoveIt (Docker)",
   "dockerComposeFile": "../compose.yaml",
   "service": "ros2",
   "workspaceFolder": "/home/ros/ws",

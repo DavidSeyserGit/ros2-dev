@@ -19,13 +19,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       libgl1 libglx-mesa0 libgl1-mesa-dri mesa-utils \
       fonts-dejavu fonts-ubuntu adwaita-icon-theme-full \
       sudo git curl wget vim nano less htop tree tmux gdb jq ca-certificates \
-      build-essential cmake python3-pip python3-venv \
+      build-essential cmake ccache python3-pip python3-venv \
       python3-colcon-common-extensions python3-colcon-mixin python3-rosdep python3-vcstool \
     && rm -rf /var/lib/apt/lists/*
 
-# ROS desktop (RViz, rqt, demos) + MoveIt with all planners (OMPL, CHOMP, Pilz, STOMP)
+# Development tools without the desktop metapackage's bundled demos/examples.
+# Keep the full MoveIt stack with OMPL, CHOMP, Pilz and STOMP planners.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      ros-jazzy-desktop \
+      ros-jazzy-rviz2 ros-jazzy-rqt-common-plugins \
+      ros-jazzy-robot-state-publisher \
       ros-jazzy-moveit \
       ros-jazzy-moveit-planners \
       ros-jazzy-moveit-planners-stomp \
@@ -34,8 +36,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       ros-jazzy-moveit-py \
       ros-jazzy-moveit-servo \
       ros-jazzy-moveit-visual-tools \
-      ros-jazzy-moveit-resources \
-      ros-jazzy-moveit-resources-panda-moveit-config \
       ros-jazzy-moveit-setup-assistant \
       ros-jazzy-ros2-control ros-jazzy-ros2-controllers \
       ros-jazzy-xacro ros-jazzy-joint-state-publisher-gui \
@@ -55,29 +55,34 @@ RUN apt-get update && apt-get install -y --no-install-recommends clangd \
 RUN (userdel -r ubuntu 2>/dev/null || true) \
     && groupadd --gid ${USER_GID} ${USERNAME} \
     && useradd --uid ${USER_UID} --gid ${USER_GID} -m -s /bin/bash ${USERNAME} \
+    && install -d -o ${USER_UID} -g ${USER_GID} /home/${USERNAME}/ws /home/${USERNAME}/.cache \
     && echo "${USERNAME} ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/${USERNAME} \
     && chmod 0440 /etc/sudoers.d/${USERNAME}
 
-COPY docker/supervisord.conf /etc/supervisor/desktop.conf
-COPY docker/entrypoint.sh docker/start-desktop.sh /usr/local/bin/
-COPY docker/skel/ /home/${USERNAME}/
-RUN chmod +x /usr/local/bin/entrypoint.sh /usr/local/bin/start-desktop.sh \
-    && ln -sf /usr/share/novnc/vnc.html /usr/share/novnc/index.html \
-    && sed -i '1i source ~/.bash_ros  # before the interactive-only guard so exec/login shells get ROS too' /home/${USERNAME}/.bashrc \
-    && cp /etc/xdg/xfce4/panel/default.xml /home/${USERNAME}/.config/xfce4/xfconf/xfce-perchannel-xml/xfce4-panel.xml \
-    && chown -R ${USERNAME}:${USERNAME} /home/${USERNAME}
-
+# Cache network-heavy user tooling independently of desktop/shell changes.
 USER ${USERNAME}
 WORKDIR /home/${USERNAME}/ws
 RUN rosdep update --rosdistro jazzy \
     && code-server --install-extension ms-python.python \
                    --install-extension llvm-vs-code-extensions.vscode-clangd >/dev/null
 
+USER root
+COPY docker/supervisord.conf /etc/supervisor/desktop.conf
+COPY docker/entrypoint.sh docker/start-desktop.sh /usr/local/bin/
+COPY --chown=${USER_UID}:${USER_GID} docker/skel/ /home/${USERNAME}/
+RUN chmod +x /usr/local/bin/entrypoint.sh /usr/local/bin/start-desktop.sh \
+    && ln -sf /usr/share/novnc/vnc.html /usr/share/novnc/index.html
+
+USER ${USERNAME}
+RUN sed -i '1i source ~/.bash_ros  # before the interactive-only guard so exec/login shells get ROS too' /home/${USERNAME}/.bashrc \
+    && cp /etc/xdg/xfce4/panel/default.xml /home/${USERNAME}/.config/xfce4/xfconf/xfce-perchannel-xml/xfce4-panel.xml
+
 ENV DISPLAY=:1 \
     LIBGL_ALWAYS_SOFTWARE=1 \
     GALLIUM_DRIVER=llvmpipe \
     RESOLUTION=1920x1080 \
-    RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+    RMW_IMPLEMENTATION=rmw_cyclonedds_cpp \
+    CCACHE_DIR=/home/${USERNAME}/.cache/ccache
 
 EXPOSE 6080 8080
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

@@ -1,229 +1,296 @@
 #!/usr/bin/env bash
-# Helper for the ROS 2 Jazzy + MoveIt browser-desktop container.
+# ROS 2 + MoveIt on Apple's container runtime (Apple Silicon, macOS 26+).
 set -euo pipefail
-cd "$(dirname "$(realpath "$0")")"  # works via the global symlink too
+CALL_DIR=$PWD
+cd "$(dirname "$(realpath "$0")")"
+ROOT=$PWD
 
-# Your settings (git-ignored): .env with ROS2_WS = your workspace; local/Dockerfile = your
-# additions to the image (built on top of it, see local.example/Dockerfile)
-BASE_IMAGE="ghcr.io/davidseysergit/ros2-dev:$(grep -s '^ROS2_DEV_TAG=' .env | cut -d= -f2- || true)"
-[ "$BASE_IMAGE" = "ghcr.io/davidseysergit/ros2-dev:" ] && BASE_IMAGE="${BASE_IMAGE}${ROS2_DEV_TAG:-latest}"
-LOCAL_IMAGE="ros2-dev-local:latest"
-[ -f local/Dockerfile ] && export ROS2_DEV_IMAGE="$LOCAL_IMAGE"
-[ -f local/compose.yaml ] && export COMPOSE_FILE="compose.yaml:local/compose.yaml"  # e.g. add-on ports
-
-ws_dir() {  # the workspace on the Mac
-  local w
-  w=$(grep -s '^ROS2_WS=' .env | cut -d= -f2- || true)
-  w=${w:-./ws}
-  w=${w/#\~/$HOME}
-  (cd "$w" 2>/dev/null && pwd) || echo "$w"
+# Read data, never execute .env as shell code. Exported variables take precedence.
+setting() {
+  local value
+  value=$(printenv "$1" 2>/dev/null || true)
+  if [ -z "$value" ] && [ -f .env ]; then
+    value=$(sed -n "s/^$1=//p" .env | tail -1)
+    value=${value%$'\r'}
+    case "$value" in \"*\") value=${value:1:${#value}-2} ;; \'*\') value=${value:1:${#value}-2} ;; esac
+  fi
+  printf '%s\n' "${value:-$2}"
 }
-
-set_env() {  # set KEY=VALUE in .env
+set_env() {
   touch .env
   grep -v "^$1=" .env > .env.tmp || true
-  echo "$1=$2" >> .env.tmp
+  printf '%s=%s\n' "$1" "$2" >> .env.tmp
   mv .env.tmp .env
 }
+ws_dir() {
+  local w
+  w=$(setting ROS2_WS ./ws); w=${w/#\~/$HOME}
+  case "$w" in /*) ;; *) w="$ROOT/$w" ;; esac
+  (cd "$w" 2>/dev/null && pwd -P) || printf '%s\n' "$w"
+}
+fail() { echo "$*" >&2; exit 1; }
+NAME=$(setting ROS2_CONTAINER ros2)
+CPUS=$(setting ROS2_CPUS 6)
+MEMORY=$(setting ROS2_MEMORY 8G)
+DNS=$(setting ROS2_DNS '')
+BUILD_ARGS=(--cpus "$CPUS" --memory "$MEMORY")
+[ -z "$DNS" ] || BUILD_ARGS+=(--dns "$DNS")
+DESKTOP_PORT=$(setting ROS2_DESKTOP_PORT 6080)
+CODE_PORT=$(setting ROS2_CODE_PORT 8080)
+for port in "$DESKTOP_PORT" "$CODE_PORT"; do
+  [[ "$port" =~ ^[1-9][0-9]{0,4}$ ]] && [ "$port" -le 65535 ] || fail "Invalid service port: $port"
+done
+[ "$DESKTOP_PORT" != "$CODE_PORT" ] || fail 'Desktop and editor ports must be different.'
+[[ "$CPUS" =~ ^[1-9][0-9]*$ ]] || fail "ROS2_CPUS must be a positive integer: $CPUS"
+[[ "$MEMORY" =~ ^[1-9][0-9]*[kKmMgGtTpP]?$ ]] || fail "Invalid ROS2_MEMORY: $MEMORY (example: 8G)"
+URL="http://localhost:$DESKTOP_PORT/vnc.html?autoconnect=1&resize=scale"
+STATE="$ROOT/local/.rosdev"
+BASE_IMAGE=$(setting ROS2_DEV_IMAGE "")
+if [ -z "$BASE_IMAGE" ]; then
+  if [ -n "$(setting ROS2_DEV_TAG '')" ]; then BASE_IMAGE="ghcr.io/davidseysergit/ros2-dev:$(setting ROS2_DEV_TAG '')"
+  elif [ -f "$STATE/base-image" ]; then BASE_IMAGE=$(cat "$STATE/base-image")
+  else BASE_IMAGE="ghcr.io/davidseysergit/ros2-dev:$(setting ROS2_DEV_TAG latest)"; fi
+fi
+ROOT_ID=$(printf '%s' "$ROOT" | shasum -a 256 | cut -c1-16)
+LOCAL_IMAGE="ros2-dev-local:$ROOT_ID"
+BUILT_IMAGE="ros2-dev:local-$ROOT_ID"
 
-addon_ports() {  # local/compose.yaml with the ports of the enabled add-ons
-  local ports=""
-  for d in local/addons/*/; do
-    [ -f "$d/ports" ] || continue
-    for p in $(cat "$d/ports"); do ports+="      - \"127.0.0.1:$p:$p\"\n"; done
+ensure_runtime() {
+  command -v container >/dev/null || fail "Apple container is missing. Install it with: brew install container"
+  container system status >/dev/null 2>&1 || container system start --enable-kernel-install
+  mkdir -p "$STATE"
+}
+inspect_container() { container inspect "$NAME" 2>/dev/null; }
+assert_owned() {
+  local info owner
+  info=$(inspect_container) || return 0
+  owner=$(printf '%s' "$info" | python3 -c 'import json,sys; print(json.load(sys.stdin)[0]["configuration"].get("labels",{}).get("rosdev.root",""))')
+  [ "$owner" = "$ROOT" ] || fail "Container '$NAME' belongs to another setup. Set ROS2_CONTAINER to a different name."
+}
+container_state() {
+  inspect_container | python3 -c 'import json,sys; print(json.load(sys.stdin)[0]["status"]["state"])' 2>/dev/null || true
+}
+image_digest() {
+  container image inspect "$1" | python3 -c 'import json,sys; print(json.load(sys.stdin)[0]["configuration"]["descriptor"]["digest"])'
+}
+# Hash only the overlay build context, not generated runtime state.
+local_key() {
+  python3 - "$1" <<'PY'
+import hashlib, os, sys
+h = hashlib.sha256(sys.argv[1].encode())
+for root, dirs, files in os.walk('local'):
+    dirs[:] = sorted(d for d in dirs if d not in ('.rosdev', '.git', '__pycache__'))
+    for name in sorted(files):
+        if root == 'local' and name in ('workspaces', 'workspaces.tmp', 'compose.yaml'): continue
+        path = os.path.join(root, name)
+        h.update(path.encode())
+        if os.path.islink(path): h.update(os.readlink(path).encode())
+        else:
+            with open(path, 'rb') as f:
+                for block in iter(lambda: f.read(1024 * 1024), b''): h.update(block)
+        h.update(str(os.stat(path).st_mode).encode())
+print(h.hexdigest())
+PY
+}
+prepare_image() {
+  container image inspect "$BASE_IMAGE" >/dev/null 2>&1 || container image pull --platform linux/arm64 "$BASE_IMAGE"
+  IMAGE=$BASE_IMAGE
+  if [ -f local/Dockerfile ]; then
+    local key old_key
+    key=$(local_key "$(image_digest "$BASE_IMAGE")")
+    old_key=$(cat "$STATE/local-key" 2>/dev/null || true)
+    if [ "$key" != "$old_key" ] || ! container image inspect "$LOCAL_IMAGE" >/dev/null 2>&1; then
+      echo "Building your additions..."
+      container build "${BUILD_ARGS[@]}" --build-arg "BASE=$BASE_IMAGE" -t "$LOCAL_IMAGE" -f local/Dockerfile local
+      printf '%s\n' "$key" > "$STATE/local-key"
+    fi
+    IMAGE=$LOCAL_IMAGE
+  fi
+}
+exec_ros() { container exec "$NAME" bash -lc "$1" bash "${@:2}"; }
+wait_desktop() {
+  local i
+  for ((i=0; i<150; i++)); do
+    if curl --connect-timeout 1 --max-time 1 -fs -o /dev/null "http://127.0.0.1:$DESKTOP_PORT/vnc.html"; then return; fi 2>/dev/null
+    sleep 0.2
   done
-  if [ -n "$ports" ]; then
-    printf "# generated by rosdev addon: ports of the enabled add-ons\nservices:\n  ros2:\n    ports:\n$ports" > local/compose.yaml
-    export COMPOSE_FILE="compose.yaml:local/compose.yaml"
-  else
-    rm -f local/compose.yaml
-    unset COMPOSE_FILE
+  fail "Desktop did not become ready. Check: rosdev logs"
+}
+up_container() {
+  ensure_runtime
+  prepare_image
+  local w workspace_id key old_key current info owner used_ports
+  w=$(ws_dir); mkdir -p "$w/src"; w=$(cd "$w" && pwd -P)
+  workspace_id=$(printf '%s' "$w" | shasum -a 256 | cut -c1-16)
+  local args=(--detach --name "$NAME" --cpus "$CPUS" --memory "$MEMORY" --shm-size 2G
+    --publish "127.0.0.1:$DESKTOP_PORT:6080" --publish "127.0.0.1:$CODE_PORT:8080"
+    --env "RESOLUTION=$(setting RESOLUTION 1920x1080)" --env "ROS_DOMAIN_ID=$(setting ROS_DOMAIN_ID 0)"
+    --volume "$w:/home/ros/ws" --volume "$ROOT/tools:/opt/rosdev:ro")
+  # Persist compiler output on Linux ext4, independent of the source bind mount.
+  for part in build install log; do
+    args+=(--volume "rosdev-$workspace_id-$part:/home/ros/ws/$part")
+  done
+  args+=(--volume "rosdev-$workspace_id-ccache:/home/ros/.cache/ccache")
+  [ -z "$DNS" ] || args+=(--dns "$DNS")
+  used_ports=" $DESKTOP_PORT $CODE_PORT "
+  for portfile in local/addons/*/ports; do
+    [ -f "$portfile" ] || continue
+    while IFS= read -r port || [ -n "$port" ]; do
+      [[ "$port" =~ ^[1-9][0-9]{0,4}$ ]] && [ "$port" -le 65535 ] || fail "Invalid port in $portfile: $port"
+      [[ "$used_ports" != *" $port "* ]] || fail "Port $port is configured more than once."
+      used_ports+="$port "
+      args+=(--publish "127.0.0.1:$port:$port")
+    done < "$portfile"
+  done
+  key=$({ printf '%s\0' "${args[@]}" "$IMAGE"; image_digest "$IMAGE"; } | shasum -a 256 | cut -d' ' -f1)
+  info=$(inspect_container || true)
+  old_key=; current=
+  if [ -n "$info" ]; then
+    owner=$(printf '%s' "$info" | python3 -c 'import json,sys; print(json.load(sys.stdin)[0]["configuration"].get("labels",{}).get("rosdev.root",""))')
+    [ "$owner" = "$ROOT" ] || fail "Container '$NAME' belongs to another setup. Set ROS2_CONTAINER to a different name."
+    old_key=$(printf '%s' "$info" | python3 -c 'import json,sys; print(json.load(sys.stdin)[0]["configuration"].get("labels",{}).get("rosdev.config",""))')
+    current=$(printf '%s' "$info" | python3 -c 'import json,sys; print(json.load(sys.stdin)[0]["status"]["state"])')
+    if [ "$key" != "$old_key" ]; then
+      [ "$current" != running ] || container stop "$NAME"
+      container delete "$NAME"
+      current=
+    fi
   fi
-}
-
-build_local() {  # local/Dockerfile on top of the ros2-dev image (cached: fast when unchanged)
-  [ -f local/Dockerfile ] || return 0
-  docker image inspect "$BASE_IMAGE" >/dev/null 2>&1 || docker pull "$BASE_IMAGE" \
-    || ROS2_DEV_IMAGE="$BASE_IMAGE" docker compose build
-  echo "Building your additions (local/Dockerfile)..."
-  docker build -q --build-arg BASE="$BASE_IMAGE" -t "$LOCAL_IMAGE" -f local/Dockerfile local >/dev/null
-}
-
-ensure_vm() {
-  if ! colima status >/dev/null 2>&1; then
-    echo "Starting Colima VM..."
-    colima start
+  if [ -z "$current" ]; then
+    container run "${args[@]}" --label "rosdev.root=$ROOT" --label "rosdev.config=$key" "$IMAGE"
+  elif [ "$current" != running ]; then
+    container start "$NAME"
   fi
+  # Fresh named volumes are owned by root; only change their top-level directories.
+  container exec --user root "$NAME" chown ros:ros /home/ros/ws/build /home/ros/ws/install /home/ros/ws/log /home/ros/.cache /home/ros/.cache/ccache
+  # colcon's setup script probes every install subdirectory, including ext4's
+  # root-owned recovery directory. Give the workspace user access to that probe.
+  container exec --user root "$NAME" sh -c 'if [ -d /home/ros/ws/install/lost+found ]; then chown ros:ros /home/ros/ws/install/lost+found; fi'
+  wait_desktop
 }
+stop_container() { assert_owned; [ "$(container_state)" != running ] || container stop "$NAME"; }
+open_url() { [ "$(setting ROS2_OPEN_BROWSER 1)" = 0 ] || open "$1"; }
 
 case "${1:-help}" in
-  up)      ensure_vm; build_local; docker compose up -d
-           echo "Desktop: http://localhost:6080/vnc.html?autoconnect=1&resize=scale"
-           echo "VS Code: http://localhost:8080  (rosdev code)"
-           sleep 3; open "http://localhost:6080/vnc.html?autoconnect=1&resize=scale" ;;
-  open)    open "http://localhost:6080/vnc.html?autoconnect=1&resize=scale" ;;
-  code)    open "http://localhost:8080/?folder=/home/ros/ws" ;;
-  new)     shift; ensure_vm; docker compose exec ros2 bash -lc "/opt/rosdev/new_package.sh ${1:-} ${2:-python}" ;;
-  top)     ensure_vm; docker compose exec -it ros2 bash -lc 'python3 /opt/rosdev/top.py' ;;
-  addon)   shift
-           case "${1:-list}" in
-             list)
-               for d in addons/*/; do
-                 n=$(basename "$d")
-                 [ -d "local/addons/$n" ] && echo "  [on]  $n" || echo "  [off] $n"
-               done
-               echo "rosdev addon add|remove <name>" ;;
-             add|remove)
-               n=${2:?usage: rosdev addon $1 <name>}
-               [ -d "addons/$n" ] || { echo "no add-on '$n' (rosdev addon list)"; exit 1; }
-               mkdir -p local
-               [ -f local/Dockerfile ] || cp local.example/Dockerfile local/Dockerfile
-               # the add-on's block in local/Dockerfile, between markers
-               python3 - "$n" "$1" <<'PY'
-import sys
-name, action = sys.argv[1:3]
+  up) up_container; echo "Desktop: $URL"; open_url "$URL" ;;
+  open) open_url "$URL" ;;
+  code)
+    up_container
+    st=$(container exec "$NAME" supervisorctl -c /etc/supervisor/desktop.conf status code || true)
+    [[ "$st" == *RUNNING* ]] || container exec "$NAME" supervisorctl -c /etc/supervisor/desktop.conf start code
+    echo "VS Code: http://localhost:$CODE_PORT"
+    open_url "http://localhost:$CODE_PORT/?folder=/home/ros/ws" ;;
+  shell) ensure_runtime; container exec -it "$NAME" bash -l ;;
+  exec) shift; [ $# -gt 0 ] || fail "Usage: rosdev exec '<command>'"; exec_ros "$*" ;;
+  build) shift; exec_ros 'bash /opt/rosdev/build.sh "$@"' "$@" ;;
+  new) shift; exec_ros 'bash /opt/rosdev/new_package.sh "$@"' "$@" ;;
+  top) container exec -it "$NAME" bash -lc 'python3 /opt/rosdev/top.py' ;;
+  down) stop_container ;;
+  restart) stop_container; up_container ;;
+  logs) container logs --follow "$NAME" ;;
+  status) container system status; container list --all ;;
+  stop-vm) stop_container; container builder stop 2>/dev/null || true ;;
+  rebuild)
+    ensure_runtime
+    BASE_IMAGE=$BUILT_IMAGE
+    container build "${BUILD_ARGS[@]}" --pull -t "$BASE_IMAGE" .
+    printf '%s\n' "$BASE_IMAGE" > "$STATE/base-image"
+    up_container ;;
+  update)
+    ensure_runtime
+    git pull --ff-only
+    if [ "$BASE_IMAGE" = "$BUILT_IMAGE" ]; then exec "$ROOT/rosdev" rebuild; fi
+    container image pull --platform linux/arm64 "$BASE_IMAGE"
+    up_container ;;
+  ws)
+    case "${2:-}" in
+      '') ws_dir ;;
+      list)
+        cur=$(ws_dir)
+        { echo "$cur"; cat local/workspaces 2>/dev/null || true; } | awk 'NF && !seen[$0]++' | while IFS= read -r w; do
+          [ "$w" = "$cur" ] && printf '* %s\n' "$w" || printf '  %s\n' "$w"
+        done ;;
+      use)
+        w=${3:?usage: rosdev ws use <folder>}; w=${w/#\~/$HOME}
+        case "$w" in /*) ;; *) w="$CALL_DIR/$w" ;; esac
+        mkdir -p "$w/src"; w=$(cd "$w" && pwd -P)
+        mkdir -p local
+        { ws_dir; cat local/workspaces 2>/dev/null || true; echo "$w"; } | awk 'NF && !seen[$0]++' > local/workspaces.tmp
+        mv local/workspaces.tmp local/workspaces
+        set_env ROS2_WS "$w"
+        unset ROS2_WS # the selected path takes effect even if the caller exported a previous one
+        echo "Workspace: $w"
+        up_container ;;
+      *) fail 'Usage: rosdev ws [list | use <folder>]' ;;
+    esac ;;
+  addon)
+    case "${2:-list}" in
+      list)
+        for d in addons/*/; do
+          [ -d "$d" ] || continue
+          n=$(basename "$d")
+          [ -d "local/addons/$n" ] && echo "  [on]  $n" || echo "  [off] $n"
+        done ;;
+      add|remove)
+        n=${3:?usage: rosdev addon add|remove <name>}
+        [[ "$n" =~ ^[a-zA-Z0-9_-]+$ ]] && [ -d "addons/$n" ] || fail "Unknown add-on: $n"
+        mkdir -p local
+        [ -f local/Dockerfile ] || cp local.example/Dockerfile local/Dockerfile
+        python3 - "$n" "$2" <<'PY'
+import pathlib, sys
+name, action = sys.argv[1:]
 begin, end = f'# >>> addon {name}', f'# <<< addon {name}'
-s = open('local/Dockerfile').read()
+p = pathlib.Path('local/Dockerfile')
+s = p.read_text()
 if begin in s:
-    s = s[:s.index(begin)] + s[s.index(end) + len(end):].lstrip('\n')
+    start = s.index(begin)
+    finish = s.index(end, start) + len(end)
+    s = s[:start] + s[finish:].lstrip('\n')
 if action == 'add':
-    s = s.rstrip('\n') + f'\n\n{begin}\n' + open(f'addons/{name}/Dockerfile.part').read().rstrip('\n') + f'\n{end}\n'
-open('local/Dockerfile', 'w').write(s)
+    s = s.rstrip('\n') + f'\n\n{begin}\n' + pathlib.Path(f'addons/{name}/Dockerfile.part').read_text().rstrip('\n') + f'\n{end}\n'
+p.write_text(s)
 PY
-               rm -rf "local/addons/$n"
-               [ "$1" = add ] && mkdir -p local/addons && cp -r "addons/$n" "local/addons/$n"
-               addon_ports
-               echo "Add-on $n: $1 — rebuilding and restarting the container..."
-               ensure_vm; build_local; docker compose up -d
-               [ -f "addons/$n/README.md" ] && [ "$1" = add ] && sed -n '3,$p' "addons/$n/README.md" ;;
-             *) echo "rosdev addon list|add|remove <name>" ;;
-           esac ;;
-  down)    docker compose down ;;
-  restart) ensure_vm; docker compose restart ;;
-  shell)   ensure_vm; docker compose exec -it ros2 bash -l ;;
-  build)   docker compose exec ros2 bash -lc 'cd ~/ws && colcon build --symlink-install' ;;
-  exec)    shift; docker compose exec -T ros2 bash -lc "$*" ;;   # e.g. rosdev exec 'ros2 topic list'
-  ws)      shift
-           case "${1:-}" in
-             "") ws_dir ;;
-             list)
-               cur=$(ws_dir)
-               { echo "$cur"; cat local/workspaces 2>/dev/null || true; } | awk 'NF && !seen[$0]++' | while read -r w; do
-                 [ "$w" = "$cur" ] && echo "* $w" || echo "  $w"
-               done ;;
-             use)
-               w=${2:?usage: rosdev ws use <folder>}
-               w=${w/#\~/$HOME}
-               mkdir -p "$w/src"
-               w=$(cd "$w" && pwd)
-               [ -f "$w/CLAUDE.md" ] || cp workspace.example/CLAUDE.md "$w/CLAUDE.md"
-               mkdir -p local
-               { ws_dir; cat local/workspaces 2>/dev/null || true; echo "$w"; } | awk 'NF && !seen[$0]++' > local/workspaces.tmp
-               mv local/workspaces.tmp local/workspaces
-               set_env ROS2_WS "$w"
-               echo "Workspace: $w — restarting the container with it..."
-               ensure_vm; build_local; docker compose up -d
-               echo "Build it once: rosdev build (then open a new desktop terminal)" ;;
-             *) echo "rosdev ws [list | use <folder>]" ;;
-           esac ;;
-  rebuild) ensure_vm   # local build, e.g. after Dockerfile edits
-           ROS2_DEV_IMAGE="$BASE_IMAGE" docker compose build --pull
-           build_local; docker compose up -d ;;
-  logs)    docker compose logs -f ;;
-  status)  colima status; docker compose ps ;;
-  stop-vm) docker compose down; colima stop ;;
+        rm -rf "local/addons/$n"
+        if [ "$2" = add ]; then mkdir -p local/addons; cp -R "addons/$n" "local/addons/$n"; fi
+        up_container ;;
+      *) fail 'Usage: rosdev addon list|add|remove <name>' ;;
+    esac ;;
   doctor)
-           G=$'\033[32m'; Y=$'\033[33m'; Rd=$'\033[31m'; N=$'\033[0m'; fails=0
-           ok()   { printf "  ${G}✓${N} %s\n" "$1"; }
-           warn() { printf "  ${Y}!${N} %s\n    ${Y}→${N} %s\n" "$1" "$2"; }
-           bad()  { printf "  ${Rd}✗${N} %s\n    ${Y}→${N} %s\n" "$1" "$2"; fails=$((fails+1)); }
-           echo "rosdev doctor"
-           [ "$(uname -m)" = arm64 ] && ok "Apple Silicon (native arm64)" || warn "Intel Mac" "works, but slower"
-           for t in colima docker git; do
-             command -v $t >/dev/null && ok "$t installed" || bad "$t missing" "brew install $t"
-           done
-           docker compose version >/dev/null 2>&1 && ok "docker compose plugin" \
-             || bad "docker compose plugin not found" "add \"cliPluginsExtraDirs\": [\"$(brew --prefix)/lib/docker/cli-plugins\"] to ~/.docker/config.json"
-           if colima status >/dev/null 2>&1; then
-             ok "Colima VM running ($(colima list -j 2>/dev/null | head -1 | python3 -c "import json,sys; d=json.load(sys.stdin); print(d['cpus'], 'CPU,', d['memory']>>30, 'GB RAM')" 2>/dev/null || echo '?'))"
-             ctx=$(docker context show 2>/dev/null)
-             [ "$ctx" = colima ] && ok "docker context: colima" || bad "docker context is '$ctx'" "docker context use colima"
-             df=$(colima ssh -- df -BG --output=avail /var/lib/docker 2>/dev/null | tail -1 | tr -dc 0-9)
-             [ -n "$df" ] && { [ "$df" -ge 10 ] && ok "VM disk free: ${df} GB" || warn "VM disk free: ${df} GB" "docker system prune"; }
-             if [ -n "$(docker compose images -q 2>/dev/null)" ] || docker image inspect "$(docker compose config --images | head -1)" >/dev/null 2>&1; then ok "image present"; else bad "image missing" "rosdev up"; fi
-             if [ "$(docker inspect -f '{{.State.Running}}' ros2 2>/dev/null)" = true ]; then
-               ok "container running"
-               st=$(docker compose exec -T ros2 supervisorctl -c /etc/supervisor/desktop.conf status 2>/dev/null)
-               for p in xvnc desktop novnc; do
-                 grep -q "^$p .*RUNNING" <<<"$st" && ok "service $p" || bad "service $p not running" "rosdev restart (logs: docker compose exec ros2 ls /tmp)"
-               done
-               docker compose exec -T ros2 bash -lc 'ros2 pkg prefix moveit_planners_stomp >/dev/null' && ok "ROS 2 + MoveIt (STOMP) available" || bad "ROS/MoveIt not found in container" "rosdev rebuild"
-             else
-               bad "container not running" "rosdev up"
-             fi
-           else
-             bad "Colima VM not running" "colima start"
-           fi
-           curl -fs -o /dev/null http://localhost:6080/vnc.html && ok "browser desktop reachable: http://localhost:6080" || bad "port 6080 not reachable" "rosdev up; check nothing else uses 6080 (lsof -i :6080)"
-           w=$(ws_dir)
-           [ -d "$w/src" ] && ok "workspace: $w ($(find "$w/src" -name package.xml -not -path "*/build/*" -not -path "*/install/*" | wc -l | tr -d ' ') packages)" \
-             || bad "workspace $w has no src/" "mkdir -p $w/src (set ROS2_WS in $(pwd)/.env)"
-           [ -f local/Dockerfile ] && ok "your additions: local/Dockerfile (image $LOCAL_IMAGE)" \
-             || warn "no local/Dockerfile" "optional: cp -r local.example local, add your packages, rosdev up"
-           [ -L "$(brew --prefix)/bin/rosdev" ] && ok "global 'rosdev' command" || warn "no global 'rosdev' command" "ln -sf $(pwd)/rosdev $(brew --prefix)/bin/rosdev"
-           echo; [ $fails -eq 0 ] && echo "  ${G}All good.${N}" || { echo "  ${Rd}$fails problem(s) found.${N}"; exit 1; } ;;
-  update)  ensure_vm
-           git pull --ff-only
-           docker pull "$BASE_IMAGE" || ROS2_DEV_IMAGE="$BASE_IMAGE" docker compose build --pull
-           build_local; docker compose up -d
-           echo "Updated. Desktop: http://localhost:6080/vnc.html?autoconnect=1&resize=scale" ;;
+    fails=0
+    check() { if "$@"; then echo "  OK: $*"; else echo "  FAIL: $*"; fails=$((fails+1)); fi; }
+    check container system status
+    check test "$(container_state)" = running
+    check test -d "$(ws_dir)/src"
+    check curl --max-time 2 -fs -o /dev/null "http://127.0.0.1:$DESKTOP_PORT/vnc.html"
+    check exec_ros 'ros2 pkg prefix moveit_ros_move_group && ros2 pkg prefix rviz2'
+    check container exec "$NAME" supervisorctl -c /etc/supervisor/desktop.conf status xvnc desktop novnc
+    check exec_ros 'test -w ~/ws/build && test -w ~/ws/install && test -w "$CCACHE_DIR"'
+    [ "$fails" = 0 ] || fail "$fails check(s) failed. Try rosdev up; inspect rosdev logs."
+    echo 'All checks passed.' ;;
   uninstall)
-           ask() { read -r -p "$1 [y/N] " a </dev/tty; [[ "$a" =~ ^[Yy]$ ]]; }
-           echo "Uninstalling ROS 2 dev environment. Each step asks first."
-           if colima status >/dev/null 2>&1; then
-             docker compose down --rmi all --volumes || true
-           fi
-           if ask "Delete the Colima VM (frees disk; removes ALL images/containers in it)?"; then
-             colima delete --force
-           fi
-           if ask "Uninstall colima + docker CLI via Homebrew?"; then
-             brew uninstall colima docker-compose docker-buildx docker || true
-           fi
-           echo "Your workspace $(ws_dir) is kept (delete it yourself if you want)."
-           if ask "Delete this folder $(pwd)?"; then
-             if [ -n "$(git status --porcelain 2>/dev/null)" ] || [ -n "$(git log @{u}.. 2>/dev/null)" ]; then
-               echo "  Warning: uncommitted or unpushed changes here."
-               ask "  Really delete anyway?" || { echo "Kept folder."; exit 0; }
-             fi
-             dir=$(pwd); cd ..; rm -rf "$dir"; echo "Deleted $dir"
-             rm -f "$(brew --prefix)/bin/rosdev"
-           fi
-           echo "Done." ;;
-  *) cat <<USAGE
+    stop_container
+    if inspect_container >/dev/null; then container delete "$NAME"; fi
+    echo "Removed container $NAME. Workspace, images, volumes and settings are kept."
+    echo 'To remove cached data explicitly: container volume list' ;;
+  *) cat <<'USAGE'
 Usage: rosdev <command>
-  up        start VM + container, open the desktop in the browser
-  open      open the browser desktop
-  shell     bash shell inside the container (ROS sourced)
-  code      open VS Code in the browser (http://localhost:8080)
-  exec CMD  run a command in the container, e.g. rosdev exec 'ros2 topic list'
-  build     colcon build the workspace
-  new NAME [python|cpp]
-            create a package in the workspace (publisher node + launch file) and build it
-  top       live view: nodes, topics with rates, container CPU / RAM
-  ws        print the workspace folder
-  ws list   known workspaces (* = current)
-  ws use F  switch to workspace folder F (created if needed; restarts the container)
-  addon list | add NAME | remove NAME
-            optional extras built into your image (e.g. foxglove)
-  down      stop the container
-  restart   restart the container
-  rebuild   build the image locally (after editing the Dockerfile / local/Dockerfile)
-  logs      follow container logs
-  status    VM + container status
-  stop-vm   stop container and the Colima VM (frees RAM)
-  doctor    check the whole setup and suggest fixes
-  update    git pull + pull newest image + restart
-  uninstall remove container/image, optionally VM, tools and this folder (asks each step)
+  up                 start the container and open the desktop
+  open               open the browser desktop
+  code               start and open VS Code in the browser
+  shell              ROS-sourced shell
+  exec '<command>'   run a command inside the container
+  build [args]       colcon build with persistent compiler caching
+  new NAME [python|cpp]  create and build a package
+  top                live nodes, topics, CPU and RAM
+  ws [list|use DIR]   show or switch workspaces
+  addon list|add NAME|remove NAME
+  down               stop the container, keeping its writable filesystem
+  restart            restart with current settings
+  rebuild            build this checkout's image and restart
+  update             update the checkout and image, then restart
+  logs | status | doctor
+  stop-vm            stop this container and the image builder
+  uninstall          remove this container, preserve workspace and cached data
 USAGE
-  ;;
+    ;;
 esac

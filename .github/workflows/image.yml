@@ -6,7 +6,7 @@ on:
   push:
     branches: [main]
     tags: ["v*"]
-    paths: ["Dockerfile", "docker/**", ".github/workflows/image.yml"]
+    paths: ["Dockerfile", ".dockerignore", "docker/**", ".github/workflows/image.yml"]
   schedule:
     - cron: "0 3 * * 1"   # weekly rebuild to pick up ROS/Ubuntu updates
   workflow_dispatch:
