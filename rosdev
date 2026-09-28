@@ -185,9 +185,42 @@ case "${1:-help}" in
   build) shift; exec_ros 'bash /opt/rosdev/build.sh "$@"' "$@" ;;
   new) shift; exec_ros 'bash /opt/rosdev/new_package.sh "$@"' "$@" ;;
   top) container exec -it "$NAME" bash -lc 'python3 /opt/rosdev/top.py' ;;
+  test) shift; exec_ros 'bash /opt/rosdev/test.sh "$@"' "$@" ;;
+  start)
+    [ $# -ge 3 ] || fail "Usage: rosdev start NAME '<command>'"
+    shift; exec_ros 'bash /opt/rosdev/jobs.sh start "$@"' "$@" ;;
+  launch)
+    [ $# -ge 4 ] || fail 'Usage: rosdev launch NAME PKG FILE [launch args...]'
+    shift; exec_ros 'bash /opt/rosdev/jobs.sh start "$1" ros2 launch "${@:2}"' "$@" ;;
+  jobs) shift; exec_ros 'bash /opt/rosdev/jobs.sh list "$@"' "$@" ;;
+  stop)
+    [ $# -ge 2 ] || fail 'Usage: rosdev stop NAME | --all'
+    exec_ros 'bash /opt/rosdev/jobs.sh stop "$1"' "$2" ;;
+  screenshot)
+    shift
+    out=''; opts=()
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --region|--scale) opts+=("$1" "${2:?$1 needs a value}"); shift ;;
+        -*) fail "Unknown option: $1 (use --region X,Y,W,H or --scale F)" ;;
+        *) out=$1 ;;
+      esac
+      shift
+    done
+    [ -n "$out" ] || out="${TMPDIR:-/tmp}/rosdev-screenshot-$(date +%Y%m%d-%H%M%S).png"
+    case "$out" in /*) ;; *) out="$CALL_DIR/$out" ;; esac
+    # No login shell: its startup output would end up inside the PNG.
+    container exec "$NAME" env DISPLAY=:1 python3 /opt/rosdev/screenshot.py "${opts[@]}" > "$out.part" \
+      || { rm -f "$out.part"; fail 'Screenshot failed.'; }
+    [ "$(head -c 4 "$out.part" | od -An -c | tr -d ' ')" = '211PNG' ] \
+      || { rm -f "$out.part"; fail 'Screenshot failed: the container did not return a PNG.'; }
+    mv "$out.part" "$out"
+    echo "$out" ;;
   down) stop_container ;;
   restart) stop_container; up_container ;;
-  logs) container logs --follow "$NAME" ;;
+  logs)
+    if [ $# -ge 2 ]; then shift; exec_ros 'bash /opt/rosdev/jobs.sh log "$@"' "$@"
+    else container logs --follow "$NAME"; fi ;;
   status) container system status; container list --all ;;
   stop-vm) stop_container; container builder stop 2>/dev/null || true ;;
   rebuild)
@@ -282,13 +315,22 @@ Usage: rosdev <command>
   build [args]       colcon build with persistent compiler caching
   new NAME [python|cpp]  create and build a package
   top                live nodes, topics, CPU and RAM
+  test [PKG...] [--filter F] [--timeout S] [--mem 4G] [--json]
+                     build and test in a private ROS domain; print a short summary
+  launch NAME PKG FILE [args]   run a launch file in the background as job NAME
+  start NAME '<command>'        run any command in the background as job NAME
+  jobs [--json]      list background jobs
+  logs NAME [-f] [-n N]         show a job's output (without NAME: container logs)
+  stop NAME | --all  stop background jobs (Ctrl-C first, then harder)
+  screenshot [FILE] [--region X,Y,W,H] [--scale F]
+                     save a PNG of the desktop and print its path
   ws [list|use DIR]   show or switch workspaces
   addon list|add NAME|remove NAME
   down               stop the container, keeping its writable filesystem
   restart            restart with current settings
   rebuild            build this checkout's image and restart
   update             update the checkout and image, then restart
-  logs | status | doctor
+  status | doctor
   stop-vm            stop this container and the image builder
   uninstall          remove this container, preserve workspace and cached data
 USAGE

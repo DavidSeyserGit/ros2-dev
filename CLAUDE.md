@@ -12,10 +12,15 @@ on Apple Silicon / macOS 26+. ROS is not installed on the Mac.
   `rosdev` command from any directory. ROS and workspace `install/` are sourced.
 - Build: `./rosdev build`; select packages with `./rosdev build --packages-select <pkg>`.
 - Dependencies: `./rosdev exec 'cd ~/ws && rosdep install --from-paths src --ignore-src -r -y'`.
-- Tests: `./rosdev exec 'cd ~/ws && colcon test && colcon test-result --verbose'`.
-- Long-running launches can use
-  `./rosdev exec 'nohup ros2 launch <pkg> <file> > /tmp/<name>.log 2>&1 < /dev/null &'`.
-  Inspect with `./rosdev exec 'tail -50 /tmp/<name>.log'`.
+- Tests: `./rosdev test [<pkg>...]` builds, runs `colcon test` in a private
+  `ROS_DOMAIN_ID`, and prints only failures. Options: `--filter '<gtest filter>'`,
+  `--timeout <s>`, `--mem 4G`, `--no-build`, `--json`. Exit code 0 = passed,
+  124 = time limit reached.
+- Background launches: `./rosdev launch <name> <pkg> <file> [args]` (or
+  `./rosdev start <name> '<cmd>'`); then `./rosdev jobs`, `./rosdev logs <name> [-n N]`,
+  `./rosdev stop <name>`. Stop jobs you started when you are done.
+- See the desktop: `./rosdev screenshot [file.png] [--region X,Y,W,H] [--scale 0.5]`
+  saves a PNG and prints its path; read that image to check RViz or other GUIs.
 - `./rosdev up` starts the desktop at http://localhost:6080. `DISPLAY=:1` is set.
   `./rosdev code` starts the browser editor on demand.
 - Use `ros-jazzy-*` apt packages. Generic environment dependencies belong in

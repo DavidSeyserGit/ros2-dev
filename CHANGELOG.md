@@ -2,6 +2,12 @@
 
 ## Unreleased — native Apple container branch
 
+- `rosdev test`: build and test in a private ROS domain with a time limit, optional
+  memory cap, GoogleTest filter, and a failures-only (or `--json`) summary
+- Background jobs: `rosdev launch`, `rosdev start`, `rosdev jobs`, `rosdev logs NAME`,
+  `rosdev stop`, replacing the manual `nohup` recipe
+- `rosdev screenshot`: PNG of the desktop (optionally cropped/scaled) for agents
+- Agent instructions (`CLAUDE.md`, workspace template) describe the new commands
 - Apple `container` replaces Colima and Docker in the macOS installer and `rosdev`
 - Apple Silicon / macOS 26+ required; Docker Compose remains an explicit alternative
 - Reuse unchanged images and local additions instead of rebuilding on every start

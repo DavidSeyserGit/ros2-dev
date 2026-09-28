@@ -63,7 +63,16 @@ rosdev ws use ~/another_ws   # switch workspace; create empty src/ if needed
 rosdev down                  # stop the ROS container
 rosdev stop-vm               # stop the ROS container and image builder
 rosdev doctor                # check runtime, image, workspace, and desktop
+rosdev test my_pkg           # build + test in a private ROS domain, summary only
+rosdev launch demo my_pkg demo.launch.py   # run a launch in the background
+rosdev jobs                  # list background jobs; rosdev logs demo; rosdev stop demo
+rosdev screenshot            # save a PNG of the desktop and print its path
 ```
+
+These commands also suit coding agents such as Claude Code: `rosdev test --json`
+and `rosdev jobs --json` give machine-readable results, `rosdev test` limits time
+(`--timeout`) and memory (`--mem 4G`), and `rosdev screenshot` lets an agent
+look at RViz. Jobs live in the container and end when it stops.
 
 `rosdev new`, `top`, and optional `addon` commands remain available. Run `rosdev`
 for the full command list. Nothing is generated in a workspace until requested.

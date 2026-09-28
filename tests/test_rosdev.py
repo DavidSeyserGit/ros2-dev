@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -119,6 +120,8 @@ elif args[:1] == ["delete"]:
 elif args[:1] == ["exec"]:
     if "supervisorctl" in args and "status" in args:
         print("code RUNNING")
+    if any(a.endswith("screenshot.py") for a in args):
+        sys.stdout.buffer.write(state.get("screenshot", "\x89PNG\r\n\x1a\nfake").encode("latin-1"))
 elif args[:2] == ["builder", "stop"]:
     pass
 elif args[:1] in (["list"], ["logs"]):
@@ -438,6 +441,108 @@ class RosdevLifecycleTests(unittest.TestCase):
         command = self.runtime_calls("exec")[-1]
         self.assertEqual(command[-2:], ["example; touch /tmp/unwanted", "cpp"])
         self.assertNotIn("example; touch /tmp/unwanted", command[4])
+
+    def test_launch_arguments_are_passed_without_shell_interpretation(self):
+        self.rosdev("launch", "demo", "my_pkg", "demo.launch.py", "use_sim:=true; touch /tmp/unwanted")
+        command = self.runtime_calls("exec")[-1]
+        self.assertIn("jobs.sh start", command[4])
+        self.assertEqual(command[-4:], ["demo", "my_pkg", "demo.launch.py", "use_sim:=true; touch /tmp/unwanted"])
+        self.assertNotIn("unwanted", command[4])
+
+    def test_job_commands_need_their_arguments(self):
+        for args in (["launch", "demo", "my_pkg"], ["start", "demo"], ["stop"]):
+            with self.subTest(args=args):
+                self.reset_calls()
+                self.rosdev(*args, ok=False)
+                self.assertEqual(self.runtime_calls("exec"), [])
+
+    def test_logs_with_a_name_shows_a_job_and_without_shows_the_container(self):
+        self.rosdev("logs", "demo", "-n", "5")
+        command = self.runtime_calls("exec")[-1]
+        self.assertIn("jobs.sh log", command[4])
+        self.assertEqual(command[-3:], ["demo", "-n", "5"])
+        self.reset_calls()
+        self.rosdev("logs")
+        self.assertEqual(self.runtime_calls("logs"), [["logs", "--follow", "ros2"]])
+
+    def test_test_arguments_reach_the_runner_unchanged(self):
+        self.rosdev("test", "my_pkg", "--filter", "Suite.*:-Suite.Slow", "--json")
+        command = self.runtime_calls("exec")[-1]
+        self.assertIn("test.sh", command[4])
+        self.assertEqual(command[-4:], ["my_pkg", "--filter", "Suite.*:-Suite.Slow", "--json"])
+
+    def test_screenshot_is_saved_relative_to_the_caller(self):
+        elsewhere = self.base_dir / "caller dir"
+        elsewhere.mkdir()
+        result = self.rosdev("screenshot", "shot.png", "--scale", "0.5", cwd=elsewhere)
+        self.assertEqual(result.stdout.strip(), str(elsewhere / "shot.png"))
+        self.assertTrue((elsewhere / "shot.png").read_bytes().startswith(b"\x89PNG"))
+        self.assertEqual(self.runtime_calls("exec")[-1][-2:], ["--scale", "0.5"])
+
+    def test_screenshot_that_is_not_a_png_leaves_no_file(self):
+        state = self.state()
+        state["screenshot"] = "Welcome to the shell\n"
+        self.save_state(state)
+        self.rosdev("screenshot", "shot.png", ok=False)
+        self.assertEqual(list(self.root.glob("shot.png*")), [])
+        self.rosdev("screenshot", "--bogus", ok=False)
+
+
+class TestSummaryTests(unittest.TestCase):
+    """tools/test_summary.py runs on the host too: it only reads JUnit XML."""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.ws = Path(self.temp.name)
+        self.results = self.ws / "build" / "pkg" / "test_results" / "pkg"
+        self.results.mkdir(parents=True)
+        self.log = self.ws / "run.log"
+        self.log.write_text("colcon output\n")
+
+    def write(self, name, body, age=0):
+        path = self.results / name
+        path.write_text(body)
+        if age:
+            os.utime(path, (path.stat().st_mtime - age,) * 2)
+
+    def summarize(self, status=0):
+        marker = self.ws / "marker"
+        marker.touch()
+        os.utime(marker, (marker.stat().st_mtime - 60,) * 2)
+        result = subprocess.run(
+            [sys.executable, str(REPO / "tools" / "test_summary.py"), "--since", str(marker), "--log", str(self.log),
+             "--status", str(status), "--timeout", "900", "--domain", "150", "--json", "pkg"],
+            cwd=self.ws, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=15)
+        return result.returncode, json.loads(result.stdout)
+
+    def test_failures_are_reported_with_their_message(self):
+        self.write("a.gtest.xml", '<testsuites><testsuite><testcase classname="S" name="ok"/>'
+                   '<testcase classname="S" name="bad"><failure message="expected 1, got 2"/></testcase>'
+                   '<testcase classname="S" name="skip"><skipped/></testcase></testsuite></testsuites>')
+        code, summary = self.summarize()
+        self.assertEqual(code, 1)
+        self.assertEqual((summary["tests"], summary["passed"], summary["failed"], summary["skipped"]), (3, 1, 1, 1))
+        self.assertEqual(summary["failures"][0]["test"], "S.bad")
+        self.assertIn("expected 1, got 2", summary["failures"][0]["message"])
+
+    def test_results_from_earlier_runs_are_ignored(self):
+        self.write("old.xml", '<testsuite><testcase name="t"><failure message="old"/></testcase></testsuite>', age=3600)
+        self.write("new.xml", '<testsuite><testcase name="t"/></testsuite>')
+        code, summary = self.summarize()
+        self.assertEqual(code, 0)
+        self.assertTrue(summary["ok"])
+        self.assertEqual(summary["tests"], 1)
+
+    def test_no_results_or_timeout_is_not_success(self):
+        code, summary = self.summarize()
+        self.assertEqual(code, 1)
+        self.assertFalse(summary["ok"])
+        self.assertIn("colcon output", summary["log_tail"])
+        self.write("new.xml", '<testsuite><testcase name="t"/></testsuite>')
+        code, summary = self.summarize(status=124)
+        self.assertEqual(code, 124)
+        self.assertTrue(summary["timed_out"])
 
 
 if __name__ == "__main__":
