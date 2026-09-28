@@ -135,6 +135,13 @@ discovery of physical robots on your LAN has not been validated: Apple's native
 network uses NAT and does not provide a bridged LAN interface. Static DDS peers
 also require bidirectional network reachability.
 
+Once a day, `rosdev` checks whether a newer image is published for the tag you use
+(`latest` unless `ROS2_DEV_TAG` pins one). It only compares digests with GHCR,
+downloads nothing, and runs in the background. When there is one, `up`, `shell`,
+`code`, `status` and `doctor` print a one-line notice; `rosdev update` installs it.
+Locally built images are not checked. Set `ROS2_UPDATE_CHECK=0` in `.env` to turn
+the check off.
+
 ## Docker and Dev Containers
 
 `compose.yaml` remains available for explicit Docker use on Linux or an existing
