@@ -29,6 +29,20 @@ ws_dir() {
   (cd "$w" 2>/dev/null && pwd -P) || printf '%s\n' "$w"
 }
 fail() { echo "$*" >&2; exit 1; }
+# The installer copies workspace.example/CLAUDE.md into new workspaces once. Point
+# out an unmodified older copy; never touch a file the user has edited.
+workspace_notes() {
+  local file template blob
+  file="$(ws_dir)/CLAUDE.md"; template="$ROOT/workspace.example/CLAUDE.md"
+  [ -f "$file" ] && [ -f "$template" ] && ! cmp -s "$file" "$template" || return 0
+  command -v git >/dev/null && [ -e "$ROOT/.git" ] || return 0
+  blob=$(git -C "$ROOT" hash-object "$file")
+  git -C "$ROOT" log --format=%H -- workspace.example/CLAUDE.md | while read -r commit; do
+    git -C "$ROOT" rev-parse -q --verify "$commit:workspace.example/CLAUDE.md" 2>/dev/null || true
+  done | grep -qx "$blob" || return 0
+  echo "Note: $file is an older copy of the agent instructions (you have not edited it)."
+  echo "Update it with: cp '$template' '$file'"
+}
 NAME=$(setting ROS2_CONTAINER ros2)
 CPUS=$(setting ROS2_CPUS 6)
 MEMORY=$(setting ROS2_MEMORY 8G)
@@ -232,6 +246,7 @@ case "${1:-help}" in
   update)
     ensure_runtime
     git pull --ff-only
+    workspace_notes
     if [ "$BASE_IMAGE" = "$BUILT_IMAGE" ]; then exec "$ROOT/rosdev" rebuild; fi
     container image pull --platform linux/arm64 "$BASE_IMAGE"
     up_container ;;
@@ -298,6 +313,7 @@ PY
     check exec_ros 'ros2 pkg prefix moveit_ros_move_group && ros2 pkg prefix rviz2'
     check container exec "$NAME" supervisorctl -c /etc/supervisor/desktop.conf status xvnc desktop novnc
     check exec_ros 'test -w ~/ws/build && test -w ~/ws/install && test -w "$CCACHE_DIR"'
+    workspace_notes
     [ "$fails" = 0 ] || fail "$fails check(s) failed. Try rosdev up; inspect rosdev logs."
     echo 'All checks passed.' ;;
   uninstall)

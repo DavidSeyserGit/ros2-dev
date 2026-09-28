@@ -1,19 +1,24 @@
 # Changelog
 
-## Unreleased — native Apple container branch
+## Unreleased
+
+**Upgrading from 0.2:** requires Apple Silicon and macOS 26+. Your workspace, `.env`
+and `local/Dockerfile` are kept; run `rosdev build` once to fill the new build
+volumes. Docker/Colima are no longer needed — stop the old container with
+`docker compose down` first. See "Upgrading from 0.2" in the README.
 
 - `rosdev test`: build and test in a private ROS domain with a time limit, optional
   memory cap, GoogleTest filter, and a failures-only (or `--json`) summary
 - Background jobs: `rosdev launch`, `rosdev start`, `rosdev jobs`, `rosdev logs NAME`,
   `rosdev stop`, replacing the manual `nohup` recipe
 - `rosdev screenshot`: PNG of the desktop (optionally cropped/scaled) for agents
-- Agent instructions (`CLAUDE.md`, workspace template) describe the new commands
+- Agent instructions (`CLAUDE.md`, workspace template) describe the new commands;
+  `rosdev doctor` and `rosdev update` point out an unedited older workspace copy
 - Apple `container` replaces Colima and Docker in the macOS installer and `rosdev`
 - Apple Silicon / macOS 26+ required; Docker Compose remains an explicit alternative
 - Reuse unchanged images and local additions instead of rebuilding on every start
 - Browser editor starts on demand; new workspaces are empty and demos are removed
 - Per-container CPU and memory settings in `.env`; preserve workspace and personal dependencies
-- Run `rosdev rebuild` to use this branch's image changes; the published image is unchanged
 - Linux volumes for build/install/log, persistent ccache, and leaner image build contexts
 - Repeated native startup and filesystem measurements documented in PERFORMANCE.md
 - RViz continues to render in software

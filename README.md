@@ -10,25 +10,12 @@ machine for each container. RViz still uses software rendering (Mesa llvmpipe);
 this migration does not enable GPU acceleration. See [measurements and their
 limits](PERFORMANCE.md) for the startup and filesystem results.
 
-## Use this branch
+## Install
 
-From a checkout of `perf/apple-container`:
-
-```bash
-brew install container git
-container system start --enable-kernel-install
-./rosdev rebuild
-```
-
-This uses `ROS2_WS` from `.env`, or `./ws` if unset. Set it to your existing
-workspace to keep using your packages.
-
-Once this branch is published, new Macs can use the installer:
+On an Apple Silicon Mac with macOS 26 or later:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/DavidSeyserGit/ros2-dev/perf/apple-container/install.sh \
-  | ROS2_DEV_BRANCH=perf/apple-container bash
-rosdev rebuild
+curl -fsSL https://raw.githubusercontent.com/DavidSeyserGit/ros2-dev/main/install.sh | bash
 ```
 
 The installer installs Homebrew if needed, then `container` and Git, clones the
@@ -38,14 +25,30 @@ opening the browser. It preserves existing `.env`, `local/`, and workspace files
 An existing clone must be clean and on the requested branch; the installer never
 switches it automatically. `ROS2_DEV_BRANCH` defaults to `main`.
 
-**The published image is unchanged.** `rosdev up` downloads it if absent and
-reuses it afterward. Run `rosdev rebuild` to build this branch's image changes
-locally, including the leaner desktop startup and removal of bundled demos.
+`rosdev up` downloads the published image if absent and reuses it afterward.
+`rosdev rebuild` builds this checkout's `Dockerfile` locally instead.
 
-Stop any existing Docker/Colima `ros2` container first so its ports are free:
-`docker compose down` from the old environment directory. Existing workspace
-files and `local/Dockerfile` can be reused. A previous Colima VM can be stopped
-with `colima stop` when it is no longer needed.
+## Upgrading from 0.2
+
+Version 0.3 replaces Docker and Colima with Apple's `container` runtime.
+
+- **Requirements:** Apple Silicon and macOS 26 or later. Intel Macs and older
+  macOS versions can stay on v0.2.0 or use Docker via `compose.yaml` (below).
+- **Kept:** your workspace, `.env` settings, and `local/Dockerfile` with personal
+  dependencies. Build output is rebuilt once in new Linux volumes: run `rosdev build`.
+- **Docker is optional** now. Stop the old container first so its ports are free:
+  `docker compose down` in the environment directory, then `colima stop` if you no
+  longer need Colima. Do not run both backends on the same ports.
+- **Steps:**
+  ```bash
+  cd ~/ros2 && docker compose down   # old backend, if it is running
+  git pull --ff-only                 # or re-run the installer
+  brew install container
+  container system start --enable-kernel-install
+  rosdev up && rosdev build
+  ```
+- **Agent instructions:** `rosdev doctor` tells you if your workspace's
+  `CLAUDE.md` is an unedited older copy and prints the command to update it.
 
 ## Daily use
 
@@ -78,7 +81,7 @@ look at RViz. Jobs live in the container and end when it stops.
 for the full command list. Nothing is generated in a workspace until requested.
 `rosdev update` updates the checkout and image; `rosdev rebuild` builds the image
 from your current checkout. Use `rebuild` after changing the main Dockerfile or
-to test unpublished image changes on this branch.
+to test unpublished image changes on a branch.
 
 ## Settings and persistent files
 

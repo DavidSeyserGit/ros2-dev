@@ -487,6 +487,27 @@ class RosdevLifecycleTests(unittest.TestCase):
         self.assertEqual(list(self.root.glob("shot.png*")), [])
         self.rosdev("screenshot", "--bogus", ok=False)
 
+    def test_unedited_old_workspace_instructions_are_pointed_out_but_not_changed(self):
+        template = self.root / "workspace.example" / "CLAUDE.md"
+        template.parent.mkdir()
+        git = ["git", "-C", str(self.root), "-c", "user.name=t", "-c", "user.email=t@example.com"]
+        subprocess.run(git + ["init", "-q"], check=True)
+        for version in ("old instructions\n", "new instructions\n"):
+            template.write_text(version)
+            subprocess.run(git + ["add", "workspace.example"], check=True)
+            subprocess.run(git + ["commit", "-qm", version], check=True)
+        workspace = self.base_dir / "ws"
+        (workspace / "src").mkdir(parents=True)
+        self.env["ROS2_WS"] = str(workspace)
+        self.rosdev("up")
+        for content, noted in (("old instructions\n", True), ("my own notes\n", False),
+                                ("new instructions\n", False)):
+            with self.subTest(content=content):
+                (workspace / "CLAUDE.md").write_text(content)
+                result = self.rosdev("doctor")
+                self.assertEqual("older copy of the agent instructions" in result.stdout, noted, result.stdout)
+                self.assertEqual((workspace / "CLAUDE.md").read_text(), content)
+
 
 class TestSummaryTests(unittest.TestCase):
     """tools/test_summary.py runs on the host too: it only reads JUnit XML."""
