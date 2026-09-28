@@ -1,14 +1,20 @@
 # ROS 2 environment (sourced from ~/.bashrc)
-source /opt/ros/jazzy/setup.bash
-[ -f /usr/share/colcon_argcomplete/hook/colcon-argcomplete.bash ] && source /usr/share/colcon_argcomplete/hook/colcon-argcomplete.bash
-[ -f ~/ws/install/setup.bash ] && source ~/ws/install/setup.bash
+# Workspace setup already sources its captured underlays, including ROS.
+if [ -f ~/ws/install/setup.bash ]; then
+  source ~/ws/install/setup.bash
+else
+  source /opt/ros/jazzy/setup.bash
+fi
+if [[ $- == *i* ]] && [ -f /usr/share/colcon_argcomplete/hook/colcon-argcomplete.bash ]; then
+  source /usr/share/colcon_argcomplete/hook/colcon-argcomplete.bash
+fi
 
-cb() {  # build workspace; merge compile_commands.json for C++ IntelliSense
-  cd ~/ws && colcon build --symlink-install "$@" --cmake-args -DCMAKE_EXPORT_COMPILE_COMMANDS=ON --no-warn-unused-cli \
-    && { cat build/*/compile_commands.json 2>/dev/null | jq -s 'add // []' > build/compile_commands.json; source install/setup.bash; }
+cb() {  # cached build + compile_commands.json for C++ IntelliSense
+  cd ~/ws || return
+  bash /opt/rosdev/build.sh "$@" || return
+  [ ! -f install/setup.bash ] || source install/setup.bash
 }
-alias cbp='cd ~/ws && colcon build --symlink-install --packages-select'
+cbp() { cb --packages-select "$@"; }
 alias ct='cd ~/ws && colcon test && colcon test-result --verbose'
 alias rdi='cd ~/ws && rosdep install --from-paths src --ignore-src -r -y'
-alias panda='ros2 launch moveit_resources_panda_moveit_config demo.launch.py'
 cd ~/ws 2>/dev/null

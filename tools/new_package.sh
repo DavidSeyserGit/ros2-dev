@@ -107,8 +107,7 @@ CPP
 esac
 
 cd ~/ws
-colcon build --symlink-install --packages-select "$name" \
-  --cmake-args -DCMAKE_EXPORT_COMPILE_COMMANDS=ON --no-warn-unused-cli 2>&1 | tail -2
+bash /opt/rosdev/build.sh --packages-select "$name" 2>&1 | tail -2
 echo
 echo "Created ~/ws/src/$name ($kind). Try it (in a new terminal, or after 'source ~/ws/install/setup.bash'):"
 echo "  ros2 launch $name $name.launch.py"

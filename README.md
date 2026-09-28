@@ -1,103 +1,155 @@
-# ROS 2 Jazzy + MoveIt 2 — browser desktop
+# ROS 2 Jazzy + MoveIt 2
 
-Runs a full ROS 2 desktop in a container and shows it in your browser at
-**http://localhost:6080**. Native arm64 on Apple Silicon: no emulation, no Docker Desktop.
+A complete ROS 2 development environment with a browser desktop, RViz, Python,
+C++, and MoveIt planning pipelines (OMPL, CHOMP, Pilz, STOMP). Packages live in an
+empty workspace on your Mac. No demo projects are installed.
 
-- ROS 2 **Jazzy** (Ubuntu 24.04, LTS until 2029) + MoveIt 2.12
-- Planning pipelines: **OMPL, CHOMP, Pilz industrial (PTP/LIN/CIRC), STOMP**
-- XFCE desktop via TigerVNC + noVNC; RViz renders in software (Mesa llvmpipe)
-- `ws/` is your colcon workspace. Edit it on the Mac (VS Code/Cursor); build it in the container.
+The native backend uses [Apple's `container`](https://github.com/apple/container)
+on **Apple Silicon with macOS 26 or later**. Linux runs in a lightweight virtual
+machine for each container. RViz still uses software rendering (Mesa llvmpipe);
+this migration does not enable GPU acceleration. See [measurements and their
+limits](PERFORMANCE.md) for the startup and filesystem results.
 
-## Install on a new Mac
+## Install
+
+On an Apple Silicon Mac with macOS 26 or later:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/DavidSeyserGit/ros2-dev/main/install.sh | bash
 ```
 
-This installs Homebrew (if missing), Colima and the Docker CLI tools, starts the VM, clones this repo to `~/ros2`, downloads the prebuilt image (built by GitHub Actions for arm64 + amd64) and opens the desktop.
+The installer installs Homebrew if needed, then `container` and Git, clones the
+environment to `~/ros2`, creates `~/ros2_ws/src`, and starts the desktop at
+http://localhost:6080. Set `ROS2_OPEN_BROWSER=0` on the installer command to skip
+opening the browser. It preserves existing `.env`, `local/`, and workspace files.
+An existing clone must be clean and on the requested branch; the installer never
+switches it automatically. `ROS2_DEV_BRANCH` defaults to `main`.
 
-## Where things live
+`rosdev up` downloads the published image if absent and reuses it afterward.
+`rosdev rebuild` builds this checkout's `Dockerfile` locally instead.
 
-| | |
-|---|---|
-| `~/ros2` (this repo) | the environment: Dockerfile, `rosdev`, desktop. Update with `rosdev update`; don't put your code here. |
-| `~/ros2_ws/src` | **your workspace**: your packages, your git repos. Mounted into the container as `~/ws`. Location: `ROS2_WS` in `~/ros2/.env`; `rosdev ws` prints it. |
-| `~/ros2/local/Dockerfile` | **your additions to the image** (extra apt / pip packages), built on top of it by `rosdev up / rebuild / update`. Git-ignored; template in `local.example/`. |
+## Upgrading from 0.2
 
-`.env` and `local/` are git-ignored, so nothing of yours ends up in this repo.
+Version 0.3 replaces Docker and Colima with Apple's `container` runtime.
+
+- **Requirements:** Apple Silicon and macOS 26 or later. Intel Macs and older
+  macOS versions can stay on v0.2.0 or use Docker via `compose.yaml` (below).
+- **Kept:** your workspace, `.env` settings, and `local/Dockerfile` with personal
+  dependencies. Build output is rebuilt once in new Linux volumes: run `rosdev build`.
+- **Docker is optional** now. Stop the old container first so its ports are free:
+  `docker compose down` in the environment directory, then `colima stop` if you no
+  longer need Colima. Do not run both backends on the same ports.
+- **Steps:**
+  ```bash
+  cd ~/ros2 && docker compose down   # old backend, if it is running
+  git pull --ff-only                 # or re-run the installer
+  brew install container
+  container system start --enable-kernel-install
+  rosdev up && rosdev build
+  ```
+- **Agent instructions:** `rosdev doctor` tells you if your workspace's
+  `CLAUDE.md` is an unedited older copy and prints the command to update it.
 
 ## Daily use
 
-`rosdev` works from any folder (the installer links it into Homebrew's `bin`).
+The installer links `rosdev` into Homebrew's `bin`, so it works from any folder.
+When using a checkout directly, run `./rosdev` from that directory.
 
 ```bash
-rosdev up        # starts Colima VM + container, opens the browser desktop
-rosdev shell     # terminal inside the container (ROS already sourced)
-rosdev code      # opens VS Code in the browser on port 8080
-rosdev build     # colcon build --symlink-install in ws/
-rosdev new NAME  # creates a small Python package; add `cpp` for C++
-rosdev top       # live nodes, topic rates, CPU and RAM
-rosdev ws list   # list known workspaces
-rosdev down      # stop the container
-rosdev stop-vm   # also stop the Colima VM to free RAM
-rosdev update    # pull latest repo, rebuild image, restart
-rosdev uninstall # remove everything (asks before each step)
+rosdev up                    # start services and desktop; reuse unchanged images
+rosdev shell                 # shell with ROS and your workspace sourced
+rosdev code                  # start the browser editor on demand, then open it
+rosdev exec 'ros2 topic list' # run a command inside the container
+rosdev build                 # build the workspace with colcon
+rosdev ws                    # print the active workspace path
+rosdev ws use ~/another_ws   # switch workspace; create empty src/ if needed
+rosdev down                  # stop the ROS container
+rosdev stop-vm               # stop the ROS container and image builder
+rosdev doctor                # check runtime, image, workspace, and desktop
+rosdev test my_pkg           # build + test in a private ROS domain, summary only
+rosdev launch demo my_pkg demo.launch.py   # run a launch in the background
+rosdev jobs                  # list background jobs; rosdev logs demo; rosdev stop demo
+rosdev screenshot            # save a PNG of the desktop and print its path
 ```
 
-Optional add-ons are kept in the repository and built into your local image when
-enabled. For example, `rosdev addon add foxglove` installs the Foxglove bridge and
-maps it to `ws://localhost:8765`; use `rosdev addon list` to see what is available.
+These commands also suit coding agents such as Claude Code: `rosdev test --json`
+and `rosdev jobs --json` give machine-readable results, `rosdev test` limits time
+(`--timeout`) and memory (`--mem 4G`), and `rosdev screenshot` lets an agent
+look at RViz. Jobs live in the container and end when it stops.
 
-## MoveIt demo
+`rosdev new`, `top`, and optional `addon` commands remain available. Run `rosdev`
+for the full command list. Nothing is generated in a workspace until requested.
+`rosdev update` updates the checkout and image; `rosdev rebuild` builds the image
+from your current checkout. Use `rebuild` after changing the main Dockerfile or
+to test unpublished image changes on a branch.
 
-Inside the desktop, double-click **MoveIt Panda Demo** (on first click XFCE asks you to trust the launcher).
-Or run this in a container terminal:
+## Settings and persistent files
 
-```bash
-ros2 launch arm_bringup moveit_demo.launch.py
-```
-
-In RViz → MotionPlanning → **Context** tab, pick the pipeline (`ompl`, `chomp`,
-`pilz_industrial_motion_planner`, `stomp`). Then drag the goal marker and click **Plan** / **Plan & Execute**.
-
-`ws/src/arm_bringup/launch/moveit_demo.launch.py` is a template: point `MoveItConfigsBuilder`
-at your own `*_moveit_config` package to swap in your arm.
-
-## VS Code / Cursor (Dev Container)
-
-For an editor in the browser, run `rosdev code` and open `http://localhost:8080`.
-It serves the mounted workspace with Python and C++ language support.
-
-Open this folder in VS Code or Cursor, then run **Dev Containers: Reopen in Container**.
-The editor attaches to the same `ros2` container: terminal, ROS autocomplete, Python + C++ IntelliSense.
-After a `cb` build, C++ IntelliSense reads `ws/build/compile_commands.json`.
-
-## Troubleshooting
-
-```bash
-rosdev doctor   # checks VM, docker, container, desktop services, port 6080 and suggests fixes
-```
-
-## Shell aliases (in the container)
-
-| alias | does |
+| Location | Purpose |
 |---|---|
-| `cb [args]` | `colcon build --symlink-install` + source + merge compile_commands |
-| `cbp <pkg>` | build selected packages |
-| `rdi` | `rosdep install` deps for `ws/src` |
-| `ct` | run tests |
-| `panda` | stock Panda MoveIt demo |
+| `~/ros2` | Environment checkout; keep your packages outside it. |
+| `~/ros2_ws/src` | Your packages and repositories, mounted at `/home/ros/ws`. |
+| `~/ros2/.env` | Workspace, container resources, and image selection. |
+| `~/ros2/local/Dockerfile` | Optional persistent dependencies; template in `local.example/`. |
 
-## Notes
+Source files stay on your Mac. Build output (`build/`, `install/`, `log/`) and the
+compiler cache use persistent Linux volumes for each workspace, avoiding shared
+filesystem overhead during compilation. They survive container recreation and
+workspace switching. Existing build output on the Mac is left untouched; run
+`rosdev build` after migrating a workspace. The native build output is visible
+inside the container, including in the browser editor.
 
-- Port 6080 is bound to `127.0.0.1` only, because the VNC desktop has no password.
-- Screen size: `RESOLUTION=2560x1440 rosdev up`. The browser URL uses `resize=scale`, which shrinks the whole desktop to fit the window.
-- The VM was created with `colima start --cpu 6 --memory 8 --disk 80 --vm-type vz --vz-rosetta`.
-  To change it: `colima stop && colima start --cpu N --memory N`.
-- Anything installed with `apt` inside a running container is lost when the container is recreated. Put it in `local/Dockerfile`; `rosdev up` builds it in.
-- Pin a version: `ROS2_DEV_TAG=v0.2.0 rosdev up`.
-- To start Colima automatically at login: `brew services start colima`.
+Example `.env`:
 
-## License
+```dotenv
+ROS2_WS=/Users/you/ros2_ws
+ROS2_CPUS=6
+ROS2_MEMORY=8G
+RESOLUTION=1920x1080
+ROS_DOMAIN_ID=0
+```
+
+If the native runtime cannot resolve package servers on your network, set
+`ROS2_DNS` to a reachable DNS server in `.env` and run `rosdev up` again. The same
+setting is passed to image builds.
+
+Run `rosdev up` after changing settings. Optional `ROS2_DEV_TAG` selects a
+published version; `ROS2_DEV_IMAGE` selects a complete image reference.
+Explicit image settings take precedence over a remembered local build on the
+next `up`; remove them to keep using this checkout's rebuilt image.
+`local/Dockerfile`, when present, extends the selected image. Its build is reused
+until its inputs change. Packages installed interactively with `apt` disappear
+when the container is recreated; put permanent additions in that Dockerfile.
+`.env` and `local/` are git-ignored.
+
+The desktop (6080) and browser editor (8080) are published on `127.0.0.1` on the
+Mac. Their unauthenticated services are also reachable at the container's IP
+from the Mac and other containers on the same virtual network. Loopback port
+publishing does not isolate that address. The editor starts with `rosdev code`.
+
+Shell helpers include `cb` (build and source), `cbp` (build selected packages),
+`rdi` (install workspace dependencies), and `ct` (run tests).
+
+ROS discovery between processes in this container is supported. Automatic
+discovery of physical robots on your LAN has not been validated: Apple's native
+network uses NAT and does not provide a bridged LAN interface. Static DDS peers
+also require bidirectional network reachability.
+
+## Docker and Dev Containers
+
+`compose.yaml` remains available for explicit Docker use on Linux or an existing
+Docker setup. The native `rosdev` commands use Apple's CLI and do not manage
+Docker. Do not run both backends on the same ports.
+
+```bash
+docker compose up -d --build
+docker compose exec ros2 bash -l
+docker compose down
+```
+
+VS Code / Cursor **Dev Containers: Reopen in Container** uses the Docker Compose
+configuration in `.devcontainer/`. It requires a separately installed Docker
+runtime and does not attach to the Apple container. For the native backend, edit
+files on your Mac or use `rosdev code`.
 
 MIT, see [LICENSE](LICENSE).

@@ -1,19 +1,28 @@
 # ROS 2 workspace
 
-This is a colcon workspace used with **ros2-dev** (ROS 2 Jazzy + MoveIt 2 in a Docker
-container, browser desktop at http://localhost:6080). ROS is NOT installed on the Mac.
+This colcon workspace uses ros2-dev: ROS 2 Jazzy + MoveIt 2 in an Apple
+container, with a browser desktop at http://localhost:6080. ROS is not installed
+on the Mac.
 
-- Packages live in `src/`. This folder is mounted into the container as `/home/ros/ws`;
-  edit files here as usual.
-- Run every ROS command in the container with `rosdev exec '<cmd>'` (ROS and
-  install/ are sourced), from any folder:
-  - build: `rosdev exec 'cd ~/ws && colcon build --symlink-install'`
-  - one package: add `--packages-select <pkg>`
-  - dependencies: `rosdev exec 'cd ~/ws && rosdep install --from-paths src --ignore-src -r -y'`
-  - tests: `rosdev exec 'cd ~/ws && colcon test && colcon test-result --verbose'`
-- Long-running launches: start them detached and log to a file, e.g.
-  `rosdev exec 'nohup ros2 launch <pkg> <file> > /tmp/<name>.log 2>&1 &'`, then read the log.
-  GUI apps (RViz) appear on the browser desktop.
-- If the container is not running: `rosdev up`.
-- System packages that should stay installed belong in `local/Dockerfile` of the
-  ros2-dev folder (`rosdev ws` prints this workspace, `rosdev doctor` checks the setup).
+- Packages belong in `src/`. This workspace is mounted at `/home/ros/ws`;
+  edit its files on the Mac as usual.
+- `build/`, `install/`, `log/`, and compiler caches use persistent Linux volumes;
+  inspect those inside the container, not on the Mac.
+- Run ROS commands with `rosdev exec '<cmd>'` from any folder. ROS and workspace
+  `install/` are sourced automatically.
+- Build: `rosdev build`; select packages with `rosdev build --packages-select <pkg>`.
+- Dependencies: `rosdev exec 'cd ~/ws && rosdep install --from-paths src --ignore-src -r -y'`.
+- Tests: `rosdev test [<pkg>...]` builds, runs `colcon test` in a private
+  `ROS_DOMAIN_ID`, and prints only failures. Options: `--filter '<gtest filter>'`,
+  `--timeout <s>`, `--mem 4G`, `--no-build`, `--json`. Exit code 0 = passed,
+  124 = time limit reached.
+- Background launches: `rosdev launch <name> <pkg> <file> [args]` (or
+  `rosdev start <name> '<cmd>'`); then `rosdev jobs`, `rosdev logs <name> [-n N]`,
+  `rosdev stop <name>`. Stop jobs you started when you are done.
+- See the desktop: `rosdev screenshot [file.png] [--region X,Y,W,H] [--scale 0.5]`
+  saves a PNG and prints its path; read that image to check RViz or other GUIs.
+- `rosdev up` starts the desktop; `rosdev code` starts the browser editor on demand.
+  GUI applications such as RViz appear on the desktop.
+- Permanent system dependencies belong in `local/Dockerfile` inside the ros2-dev
+  environment checkout. `rosdev ws` prints this workspace; `rosdev doctor` checks
+  the setup. Do not add example packages unless requested.
