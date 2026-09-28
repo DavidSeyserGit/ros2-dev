@@ -508,6 +508,32 @@ class RosdevLifecycleTests(unittest.TestCase):
                 self.assertEqual("older copy of the agent instructions" in result.stdout, noted, result.stdout)
                 self.assertEqual((workspace / "CLAUDE.md").read_text(), content)
 
+    def test_update_notice_compares_the_cached_published_digest(self):
+        state_dir = self.root / "local" / ".rosdev"
+        state_dir.mkdir(parents=True, exist_ok=True)
+        for cached, env, noticed in (("sha256:base-v1", {}, False), ("sha256:newer", {}, True),
+                                     ("sha256:newer", {"ROS2_UPDATE_CHECK": "0"}, False),
+                                     ("not a digest", {}, False)):
+            with self.subTest(cached=cached, env=env):
+                (state_dir / "update-check").write_text(cached + "\n")
+                self.env.update(env)
+                result = self.rosdev("status")
+                self.assertEqual("Update available" in result.stderr, noticed, result.stderr)
+                for key in env:
+                    del self.env[key]
+        # Commands whose output agents parse never get the notice.
+        self.assertNotIn("Update available", self.rosdev("exec", "true").stderr)
+
+    def test_update_notice_skips_locally_built_images(self):
+        self.env["ROS2_DEV_IMAGE"] = "my-own-image:dev"
+        state = self.state()
+        state["images"]["my-own-image:dev"] = "sha256:mine"
+        self.save_state(state)
+        state_dir = self.root / "local" / ".rosdev"
+        state_dir.mkdir(parents=True, exist_ok=True)
+        (state_dir / "update-check").write_text("sha256:newer\n")
+        self.assertNotIn("Update available", self.rosdev("status").stderr)
+
 
 class TestSummaryTests(unittest.TestCase):
     """tools/test_summary.py runs on the host too: it only reads JUnit XML."""

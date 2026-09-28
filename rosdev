@@ -182,19 +182,47 @@ up_container() {
   container exec --user root "$NAME" sh -c 'if [ -d /home/ros/ws/install/lost+found ]; then chown ros:ros /home/ros/ws/install/lost+found; fi'
   wait_desktop
 }
+# Update notice: once a day, in the background, compare the published image's
+# digest on GHCR (a manifest HEAD request, nothing is downloaded) with the local
+# copy. Only for published images; ROS2_UPDATE_CHECK=0 turns it off.
+PUBLISHED=ghcr.io/davidseysergit/ros2-dev
+update_notice() {
+  [ "$(setting ROS2_UPDATE_CHECK 1)" != 0 ] && [[ "$BASE_IMAGE" == "$PUBLISHED":* ]] || return 0
+  local cache="$STATE/update-check" remote local_digest
+  if [ ! -f "$cache" ] || [ -n "$(find "$cache" -mmin +1440 2>/dev/null)" ]; then
+    mkdir -p "$STATE"; touch "$cache"
+    ( remote_digest "${BASE_IMAGE#*:}" > "$cache.tmp" 2>/dev/null && mv "$cache.tmp" "$cache" || rm -f "$cache.tmp" ) \
+      > /dev/null 2>&1 < /dev/null &
+    disown 2>/dev/null || true
+  fi
+  remote=$(cat "$cache" 2>/dev/null || true)
+  [[ "$remote" == sha256:* ]] || return 0
+  local_digest=$(image_digest "$BASE_IMAGE" 2>/dev/null) || return 0
+  [ "$remote" = "$local_digest" ] || \
+    echo "Update available: a newer $BASE_IMAGE image is published. Run: rosdev update" >&2
+}
+remote_digest() {
+  local token
+  token=$(curl -fsS --max-time 5 "https://ghcr.io/token?scope=repository:${PUBLISHED#ghcr.io/}:pull" |
+    python3 -c 'import json,sys; print(json.load(sys.stdin)["token"])') || return 1
+  curl -fsSI --max-time 5 -H "Authorization: Bearer $token" \
+    -H 'Accept: application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json' \
+    "https://ghcr.io/v2/${PUBLISHED#ghcr.io/}/manifests/$1" |
+    tr -d '\r' | sed -n 's/^[Dd]ocker-[Cc]ontent-[Dd]igest: *//p' | grep '^sha256:'
+}
 stop_container() { assert_owned; [ "$(container_state)" != running ] || container stop "$NAME"; }
 open_url() { [ "$(setting ROS2_OPEN_BROWSER 1)" = 0 ] || open "$1"; }
 
 case "${1:-help}" in
-  up) up_container; echo "Desktop: $URL"; open_url "$URL" ;;
+  up) up_container; echo "Desktop: $URL"; update_notice; open_url "$URL" ;;
   open) open_url "$URL" ;;
   code)
     up_container
     st=$(container exec "$NAME" supervisorctl -c /etc/supervisor/desktop.conf status code || true)
     [[ "$st" == *RUNNING* ]] || container exec "$NAME" supervisorctl -c /etc/supervisor/desktop.conf start code
-    echo "VS Code: http://localhost:$CODE_PORT"
+    echo "VS Code: http://localhost:$CODE_PORT"; update_notice
     open_url "http://localhost:$CODE_PORT/?folder=/home/ros/ws" ;;
-  shell) ensure_runtime; container exec -it "$NAME" bash -l ;;
+  shell) ensure_runtime; update_notice; container exec -it "$NAME" bash -l ;;
   exec) shift; [ $# -gt 0 ] || fail "Usage: rosdev exec '<command>'"; exec_ros "$*" ;;
   build) shift; exec_ros 'bash /opt/rosdev/build.sh "$@"' "$@" ;;
   new) shift; exec_ros 'bash /opt/rosdev/new_package.sh "$@"' "$@" ;;
@@ -235,7 +263,7 @@ case "${1:-help}" in
   logs)
     if [ $# -ge 2 ]; then shift; exec_ros 'bash /opt/rosdev/jobs.sh log "$@"' "$@"
     else container logs --follow "$NAME"; fi ;;
-  status) container system status; container list --all ;;
+  status) container system status; container list --all; update_notice ;;
   stop-vm) stop_container; container builder stop 2>/dev/null || true ;;
   rebuild)
     ensure_runtime
@@ -249,6 +277,7 @@ case "${1:-help}" in
     workspace_notes
     if [ "$BASE_IMAGE" = "$BUILT_IMAGE" ]; then exec "$ROOT/rosdev" rebuild; fi
     container image pull --platform linux/arm64 "$BASE_IMAGE"
+    rm -f "$STATE/update-check"
     up_container ;;
   ws)
     case "${2:-}" in
@@ -314,6 +343,7 @@ PY
     check container exec "$NAME" supervisorctl -c /etc/supervisor/desktop.conf status xvnc desktop novnc
     check exec_ros 'test -w ~/ws/build && test -w ~/ws/install && test -w "$CCACHE_DIR"'
     workspace_notes
+    update_notice
     [ "$fails" = 0 ] || fail "$fails check(s) failed. Try rosdev up; inspect rosdev logs."
     echo 'All checks passed.' ;;
   uninstall)
@@ -321,7 +351,7 @@ PY
     if inspect_container >/dev/null; then container delete "$NAME"; fi
     echo "Removed container $NAME. Workspace, images, volumes and settings are kept."
     echo 'To remove cached data explicitly: container volume list' ;;
-  *) cat <<'USAGE'
+  *) update_notice; cat <<'USAGE'
 Usage: rosdev <command>
   up                 start the container and open the desktop
   open               open the browser desktop

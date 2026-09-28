@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Update notice: once a day `rosdev` compares the published image digest on GHCR with
+  your local image (nothing is downloaded) and suggests `rosdev update`;
+  `ROS2_UPDATE_CHECK=0` turns it off
+
 ## v0.3.0 — 2026-09-28
 
 **Upgrading from 0.2:** requires Apple Silicon and macOS 26+. Your workspace, `.env`
