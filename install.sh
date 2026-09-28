@@ -67,5 +67,6 @@ container system start --enable-kernel-install
 step 'Starting ROS 2 (the first run downloads the image)...'
 ROS2_OPEN_BROWSER="${ROS2_OPEN_BROWSER:-1}" "$DIR/rosdev" up
 
-printf '\nReady.\n  Desktop:   http://localhost:6080\n  Workspace: %s/src\n  Shell:     rosdev shell\n  Editor:    rosdev code\n  Stop:      rosdev down\n' "$WS"
-printf '\nTo use image changes from this checkout, run rosdev rebuild.\n'
+PORT=${ROS2_DESKTOP_PORT:-$(sed -n 's/^ROS2_DESKTOP_PORT=//p' "$DIR/.env" | tail -1)}
+printf '\nReady.\n  Desktop:   http://localhost:%s\n  Workspace: %s/src\n  Shell:     rosdev shell\n  Editor:    rosdev code\n  Stop:      rosdev down\n' \
+  "${PORT:-6080}" "$WS"
