@@ -1,5 +1,7 @@
 # Changelog
 
+## Unreleased
+
 ## v0.3.0 — 2026-09-28
 
 **Upgrading from 0.2:** requires Apple Silicon and macOS 26+. Your workspace, `.env`
